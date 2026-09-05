@@ -21,6 +21,7 @@
     --bubble-assistant: #eef0f2;
     --bubble-assistant-text: #1d1d1f;
     --error: #d70015;
+    --code-bg: rgba(0, 0, 0, 0.06);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
   }
@@ -40,6 +41,7 @@
       --bubble-assistant: #2c2c2e;
       --bubble-assistant-text: #f5f5f7;
       --error: #ff453a;
+      --code-bg: rgba(255, 255, 255, 0.1);
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
       --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
     }
@@ -190,10 +192,65 @@
     border-radius: 16px;
     font-size: 15px;
     line-height: 1.5;
-    white-space: pre-wrap;
     word-wrap: break-word;
     box-shadow: var(--shadow-sm);
     animation: msg-in 0.18s ease-out;
+  }
+  .msg.user,
+  .msg.pending,
+  .msg.error {
+    white-space: pre-wrap;
+  }
+  .msg.assistant > *:first-child { margin-top: 0; }
+  .msg.assistant > *:last-child { margin-bottom: 0; }
+  .msg.assistant p { margin: 0 0 10px; }
+  .msg.assistant ul,
+  .msg.assistant ol {
+    margin: 0 0 10px;
+    padding-left: 22px;
+  }
+  .msg.assistant li { margin: 2px 0; }
+  .msg.assistant pre {
+    background: var(--code-bg);
+    padding: 10px 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0 0 10px;
+  }
+  .msg.assistant code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  .msg.assistant :not(pre) > code {
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+  .msg.assistant pre code {
+    background: none;
+    padding: 0;
+  }
+  .msg.assistant a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .msg.assistant blockquote {
+    margin: 0 0 10px;
+    padding-left: 12px;
+    border-left: 3px solid var(--border);
+    opacity: 0.85;
+  }
+  .msg.assistant h1,
+  .msg.assistant h2,
+  .msg.assistant h3 {
+    margin: 14px 0 8px;
+    font-size: 1.1em;
+    font-weight: 700;
+  }
+  .msg.assistant hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 10px 0;
   }
   @keyframes msg-in {
     from { opacity: 0; transform: translateY(4px); }
@@ -300,6 +357,8 @@
     </div>
   </main>
 
+  <script src="/vendor/marked.js"></script>
+  <script src="/vendor/dompurify.js"></script>
   <script>
     const messagesEl = document.getElementById('messages');
     const composer = document.getElementById('composer');
@@ -341,6 +400,16 @@
       messagesEl.appendChild(div);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return div;
+    }
+
+    function renderAssistantText(bubble, text) {
+      if (window.marked && window.DOMPurify) {
+        bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+      } else {
+        // Markdown libraries failed to load (CDN blocked, offline, etc.) — fall
+        // back to plain text rather than breaking the chat.
+        bubble.textContent = text;
+      }
     }
 
     input.addEventListener('input', () => {
@@ -439,7 +508,7 @@
                 bubble.classList.add('assistant');
               }
               assistantText += delta;
-              bubble.textContent = assistantText;
+              renderAssistantText(bubble, assistantText);
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
           }

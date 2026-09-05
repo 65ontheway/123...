@@ -25,6 +25,15 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve the two browser-ready bundles used to render Markdown in the chat UI
+// directly from node_modules, so the page isn't dependent on a third-party CDN.
+app.get('/vendor/marked.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/marked/lib/marked.umd.js'));
+});
+app.get('/vendor/dompurify.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js'));
+});
+
 // Open-weight models commonly run on local/home hardware (Ollama, LM Studio, etc.),
 // served here through OpenRouter. Flagship closed/hosted-only tiers (e.g. "Max") are
 // intentionally left out.
