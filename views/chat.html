@@ -179,6 +179,8 @@
   }
   #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
   #send-btn:disabled { opacity: 0.5; cursor: default; }
+  #send-btn.stop { background: var(--error); }
+  #send-btn.stop:hover { filter: brightness(1.1); }
 </style>
 </head>
 <body>
@@ -209,6 +211,7 @@
     const modelSelect = document.getElementById('model-select');
 
     const history = [];
+    let activeController = null;
 
     async function loadModels() {
       try {
@@ -254,8 +257,17 @@
       }
     });
 
+    sendBtn.addEventListener('click', (e) => {
+      if (activeController) {
+        e.preventDefault();
+        activeController.abort();
+      }
+    });
+
     composer.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (activeController) return;
+
       const text = input.value.trim();
       if (!text) return;
 
@@ -264,15 +276,20 @@
       input.value = '';
       input.style.height = 'auto';
 
-      sendBtn.disabled = true;
+      const controller = new AbortController();
+      activeController = controller;
+      sendBtn.textContent = 'Stop';
+      sendBtn.classList.add('stop');
       input.disabled = true;
       const bubble = addBubble('pending', 'Thinking...');
+      let assistantText = '';
 
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: history, model: modelSelect.value }),
+          signal: controller.signal,
         });
 
         if (res.status === 401) {
@@ -290,7 +307,6 @@
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let assistantText = '';
         let streamError = '';
 
         while (true) {
@@ -338,10 +354,22 @@
           history.push({ role: 'assistant', content: assistantText });
         }
       } catch (err) {
-        bubble.remove();
-        addBubble('error', 'Could not reach the server.');
+        if (err.name === 'AbortError') {
+          if (assistantText) {
+            bubble.classList.remove('pending');
+            bubble.classList.add('assistant');
+            history.push({ role: 'assistant', content: assistantText });
+          } else {
+            bubble.remove();
+          }
+        } else {
+          bubble.remove();
+          addBubble('error', 'Could not reach the server.');
+        }
       } finally {
-        sendBtn.disabled = false;
+        activeController = null;
+        sendBtn.textContent = 'Send';
+        sendBtn.classList.remove('stop');
         input.disabled = false;
         input.focus();
       }
