@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Chat</title>
+<title>RayGPT v.0</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -61,6 +61,21 @@
     font-weight: 600;
     margin: 0;
   }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #model-select {
+    font-size: 13px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+    max-width: 200px;
+  }
   #logout-btn {
     font-size: 13px;
     padding: 7px 14px;
@@ -80,10 +95,15 @@
   }
   #chat-container {
     width: 100%;
-    max-width: 720px;
+    max-width: 1400px;
     display: flex;
     flex-direction: column;
     padding: 0 16px;
+  }
+  @media (min-width: 640px) {
+    #chat-container {
+      width: 66.67vw;
+    }
   }
   #messages {
     flex: 1;
@@ -163,8 +183,11 @@
 </head>
 <body>
   <header>
-    <h1>Chat</h1>
-    <button id="logout-btn">Log Out</button>
+    <h1>RayGPT v.0</h1>
+    <div class="header-actions">
+      <select id="model-select" aria-label="Model"></select>
+      <button id="logout-btn">Log Out</button>
+    </div>
   </header>
 
   <main>
@@ -183,8 +206,33 @@
     const input = document.getElementById('input');
     const sendBtn = document.getElementById('send-btn');
     const logoutBtn = document.getElementById('logout-btn');
+    const modelSelect = document.getElementById('model-select');
 
     const history = [];
+    const TYPE_DELAY_MS = 15; // ms between revealed characters; raise to type out slower
+
+    async function loadModels() {
+      try {
+        const res = await fetch('/api/models');
+        if (res.status === 401) {
+          window.location.href = '/';
+          return;
+        }
+        const data = await res.json();
+        if (!data.ok) return;
+        modelSelect.innerHTML = '';
+        for (const m of data.models) {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.label;
+          modelSelect.appendChild(opt);
+        }
+        modelSelect.value = data.default;
+      } catch (err) {
+        // dropdown just stays empty; chat still works with the server's default model
+      }
+    }
+    loadModels();
 
     function addBubble(role, text) {
       const div = document.createElement('div');
@@ -225,7 +273,7 @@
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: history }),
+          body: JSON.stringify({ messages: history, model: modelSelect.value }),
         });
 
         if (res.status === 401) {
@@ -245,6 +293,24 @@
         let buffer = '';
         let assistantText = '';
         let streamError = '';
+
+        let shownLength = 0;
+        let typing = false;
+        function typeOut() {
+          if (typing) return;
+          typing = true;
+          const step = () => {
+            if (shownLength < assistantText.length) {
+              shownLength++;
+              bubble.textContent = assistantText.slice(0, shownLength);
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+              setTimeout(step, TYPE_DELAY_MS);
+            } else {
+              typing = false;
+            }
+          };
+          step();
+        }
 
         while (true) {
           const { done, value } = await reader.read();
@@ -278,10 +344,13 @@
                 bubble.classList.add('assistant');
               }
               assistantText += delta;
-              bubble.textContent = assistantText;
-              messagesEl.scrollTop = messagesEl.scrollHeight;
+              typeOut();
             }
           }
+        }
+
+        while (typing) {
+          await new Promise((resolve) => setTimeout(resolve, TYPE_DELAY_MS));
         }
 
         if (streamError && !assistantText) {

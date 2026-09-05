@@ -25,6 +25,18 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+const AVAILABLE_MODELS = [
+  { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini' },
+  { id: 'openai/gpt-4o', label: 'GPT-4o' },
+  { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+  { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
+  { id: 'qwen/qwen3.8-27b', label: 'Qwen3.8 27B' },
+  { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
+  { id: 'meta-llama/llama-3.1-8b-instruct:free', label: 'Llama 3.1 8B (free)' },
+];
+const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || AVAILABLE_MODELS[0].id;
+const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
+
 function credentialsMatch(a, b) {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -74,11 +86,19 @@ app.get('/chat', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'chat.html'));
 });
 
+app.get('/api/models', requireAuth, (req, res) => {
+  const models = AVAILABLE_MODELS.some((m) => m.id === DEFAULT_MODEL)
+    ? AVAILABLE_MODELS
+    : [{ id: DEFAULT_MODEL, label: `${DEFAULT_MODEL} (from .env)` }, ...AVAILABLE_MODELS];
+  res.json({ ok: true, models, default: DEFAULT_MODEL });
+});
+
 app.post('/api/chat', requireAuth, async (req, res) => {
-  const { messages } = req.body || {};
+  const { messages, model } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ ok: false, error: 'messages array is required' });
   }
+  const selectedModel = VALID_MODEL_IDS.has(model) ? model : DEFAULT_MODEL;
 
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -95,7 +115,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         'X-Title': 'Simple LLM Chat',
       },
       body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
+        model: selectedModel,
         messages,
         stream: true,
       }),
