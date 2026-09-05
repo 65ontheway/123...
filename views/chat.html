@@ -209,7 +209,6 @@
     const modelSelect = document.getElementById('model-select');
 
     const history = [];
-    const TYPE_DELAY_MS = 15; // ms between revealed characters; raise to type out slower
 
     async function loadModels() {
       try {
@@ -294,24 +293,6 @@
         let assistantText = '';
         let streamError = '';
 
-        let shownLength = 0;
-        let typing = false;
-        function typeOut() {
-          if (typing) return;
-          typing = true;
-          const step = () => {
-            if (shownLength < assistantText.length) {
-              shownLength++;
-              bubble.textContent = assistantText.slice(0, shownLength);
-              messagesEl.scrollTop = messagesEl.scrollHeight;
-              setTimeout(step, TYPE_DELAY_MS);
-            } else {
-              typing = false;
-            }
-          };
-          step();
-        }
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -344,13 +325,10 @@
                 bubble.classList.add('assistant');
               }
               assistantText += delta;
-              typeOut();
+              bubble.textContent = assistantText;
+              messagesEl.scrollTop = messagesEl.scrollHeight;
             }
           }
-        }
-
-        while (typing) {
-          await new Promise((resolve) => setTimeout(resolve, TYPE_DELAY_MS));
         }
 
         if (streamError && !assistantText) {
