@@ -189,11 +189,21 @@
     overflow-y: auto;
   }
   #sidebar-resizer {
-    width: 6px;
+    position: relative;
+    width: 2px;
     flex-shrink: 0;
     cursor: col-resize;
     background: transparent;
     transition: background 0.1s ease;
+  }
+  #sidebar-resizer::before {
+    /* Invisible wider hit area so a thin, unobtrusive line stays easy to grab */
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
   }
   #sidebar-resizer:hover,
   #sidebar-resizer.dragging {
@@ -586,7 +596,11 @@
 
     function makeThreadTitle(text) {
       const trimmed = text.trim().replace(/\s+/g, ' ');
-      return trimmed.length > 40 ? trimmed.slice(0, 40) + '…' : trimmed;
+      // Cap well past anything the sidebar could ever visually fit (even at
+      // its max drag width), so the CSS ellipsis on .thread-item-title does
+      // the real, width-aware truncation — this cap only exists to avoid
+      // storing an entire pasted essay as a "title".
+      return trimmed.length > 200 ? trimmed.slice(0, 200) + '…' : trimmed;
     }
 
     function touchActiveThread() {
