@@ -189,11 +189,21 @@
     overflow-y: auto;
   }
   #sidebar-resizer {
-    width: 6px;
+    position: relative;
+    width: 2px;
     flex-shrink: 0;
     cursor: col-resize;
     background: transparent;
     transition: background 0.1s ease;
+  }
+  #sidebar-resizer::before {
+    /* Invisible wider hit area so a thin, unobtrusive line stays easy to grab */
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
   }
   #sidebar-resizer:hover,
   #sidebar-resizer.dragging {
