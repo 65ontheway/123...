@@ -25,14 +25,28 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Open-weight models commonly run on local/home hardware (Ollama, LM Studio, etc.),
+// served here through OpenRouter. Flagship closed/hosted-only tiers (e.g. "Max") are
+// intentionally left out.
 const AVAILABLE_MODELS = [
-  { id: 'openai/gpt-4o-mini', label: 'GPT-4o mini' },
-  { id: 'openai/gpt-4o', label: 'GPT-4o' },
-  { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
-  { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
-  { id: 'qwen/qwen3.8-27b', label: 'Qwen3.8 27B' },
-  { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
-  { id: 'meta-llama/llama-3.1-8b-instruct:free', label: 'Llama 3.1 8B (free)' },
+  { id: 'meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B' },
+  { id: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' },
+  { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
+  { id: 'meta-llama/llama-4-scout', label: 'Llama 4 Scout' },
+  { id: 'mistralai/mistral-nemo', label: 'Mistral Nemo 12B' },
+  { id: 'mistralai/mistral-small-3.2-24b-instruct', label: 'Mistral Small 3.2 24B' },
+  { id: 'mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B' },
+  { id: 'qwen/qwen3-8b', label: 'Qwen3 8B' },
+  { id: 'qwen/qwen3-14b', label: 'Qwen3 14B' },
+  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B' },
+  { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen2.5 72B' },
+  { id: 'qwen/qwen2.5-coder-7b-instruct', label: 'Qwen2.5 Coder 7B' },
+  { id: 'google/gemma-3-12b-it', label: 'Gemma 3 12B' },
+  { id: 'google/gemma-3-27b-it', label: 'Gemma 3 27B' },
+  { id: 'microsoft/phi-4', label: 'Phi-4 14B' },
+  { id: 'deepseek/deepseek-r1-distill-llama-8b', label: 'DeepSeek R1 Distill Llama 8B' },
+  { id: 'deepseek/deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 Distill Qwen 32B' },
+  { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill Llama 70B' },
 ];
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || AVAILABLE_MODELS[0].id;
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
