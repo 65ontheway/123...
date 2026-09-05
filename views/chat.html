@@ -80,10 +80,15 @@
   }
   #chat-container {
     width: 100%;
-    max-width: 720px;
+    max-width: 1400px;
     display: flex;
     flex-direction: column;
     padding: 0 16px;
+  }
+  @media (min-width: 640px) {
+    #chat-container {
+      width: 66.67vw;
+    }
   }
   #messages {
     flex: 1;
