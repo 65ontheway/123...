@@ -152,6 +152,8 @@
   #sidebar-toggle:focus-visible,
   #new-chat-btn:focus-visible,
   .thread-item:focus-visible,
+  .thread-item-rename:focus-visible,
+  .thread-item-delete:focus-visible,
   #input:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -222,20 +224,34 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .thread-item-rename,
   .thread-item-delete {
     flex-shrink: 0;
     border: none;
     background: transparent;
     color: var(--muted);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     padding: 2px 4px;
     border-radius: 4px;
     opacity: 0;
     transition: opacity 0.1s ease;
   }
+  .thread-item:hover .thread-item-rename,
   .thread-item:hover .thread-item-delete { opacity: 1; }
+  .thread-item-rename:hover { color: var(--text); }
   .thread-item-delete:hover { color: var(--error); }
+  .thread-item-title-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    color: inherit;
+    background: var(--panel-bg);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 1px 5px;
+    outline: none;
+  }
   #sidebar-backdrop { display: none; }
 
   @media (max-width: 768px) {
@@ -580,7 +596,21 @@
         const title = document.createElement('span');
         title.className = 'thread-item-title';
         title.textContent = t.title || 'New chat';
+        title.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          startRenaming(item, title, t);
+        });
         item.appendChild(title);
+
+        const rename = document.createElement('button');
+        rename.className = 'thread-item-rename';
+        rename.textContent = '✎';
+        rename.setAttribute('aria-label', 'Rename chat');
+        rename.addEventListener('click', (e) => {
+          e.stopPropagation();
+          startRenaming(item, title, t);
+        });
+        item.appendChild(rename);
 
         const del = document.createElement('button');
         del.className = 'thread-item-delete';
@@ -602,6 +632,39 @@
 
         threadListEl.appendChild(item);
       }
+    }
+
+    function startRenaming(item, titleEl, thread) {
+      let cancelled = false;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'thread-item-title-input';
+      input.value = thread.title || '';
+      input.maxLength = 100;
+
+      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          input.blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelled = true;
+          renderThreadList();
+        }
+      });
+      input.addEventListener('blur', () => {
+        if (cancelled) return;
+        const value = input.value.trim();
+        thread.title = value || 'New chat';
+        saveState();
+        renderThreadList();
+      });
+
+      item.replaceChild(input, titleEl);
+      input.focus();
+      input.select();
     }
 
     function renderHistory() {
