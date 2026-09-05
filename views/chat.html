@@ -219,7 +219,7 @@
 
       sendBtn.disabled = true;
       input.disabled = true;
-      const pending = addBubble('pending', 'Thinking...');
+      const bubble = addBubble('pending', 'Thinking...');
 
       try {
         const res = await fetch('/api/chat', {
@@ -233,17 +233,65 @@
           return;
         }
 
-        const data = await res.json();
-        pending.remove();
-
-        if (res.ok && data.ok) {
-          addBubble('assistant', data.reply);
-          history.push({ role: 'assistant', content: data.reply });
-        } else {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          bubble.remove();
           addBubble('error', data.error || 'Something went wrong.');
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let assistantText = '';
+        let streamError = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const payload = trimmed.slice(5).trim();
+            if (payload === '[DONE]') continue;
+
+            let json;
+            try {
+              json = JSON.parse(payload);
+            } catch {
+              continue;
+            }
+
+            if (json.error) {
+              streamError = json.error.message || 'OpenRouter request failed';
+              continue;
+            }
+
+            const delta = json.choices?.[0]?.delta?.content;
+            if (delta) {
+              if (!assistantText) {
+                bubble.classList.remove('pending');
+                bubble.classList.add('assistant');
+              }
+              assistantText += delta;
+              bubble.textContent = assistantText;
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
+          }
+        }
+
+        if (streamError && !assistantText) {
+          bubble.remove();
+          addBubble('error', streamError);
+        } else {
+          history.push({ role: 'assistant', content: assistantText });
         }
       } catch (err) {
-        pending.remove();
+        bubble.remove();
         addBubble('error', 'Could not reach the server.');
       } finally {
         sendBtn.disabled = false;
