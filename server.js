@@ -194,6 +194,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         model: selectedModel,
         messages: upstreamMessages,
         stream: true,
+        include_reasoning: true,
       }),
     });
 

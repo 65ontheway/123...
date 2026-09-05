@@ -149,9 +149,116 @@
   #model-select:focus-visible,
   #logout-btn:focus-visible,
   #send-btn:focus-visible,
+  #sidebar-toggle:focus-visible,
+  #new-chat-btn:focus-visible,
+  .thread-item:focus-visible,
   #input:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  #sidebar-toggle {
+    display: none;
+    font-size: 18px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .app-body {
+    position: relative;
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 12px;
+    border-right: 1px solid var(--border);
+    background: var(--panel-bg);
+    overflow-y: auto;
+  }
+  #new-chat-btn {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  #new-chat-btn:hover { border-color: var(--accent); background: var(--bubble-assistant); }
+  #thread-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .thread-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .thread-item:hover { background: var(--bubble-assistant); }
+  .thread-item.active { background: var(--bubble-assistant); font-weight: 600; }
+  .thread-item-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .thread-item-delete {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  .thread-item:hover .thread-item-delete { opacity: 1; }
+  .thread-item-delete:hover { color: var(--error); }
+  #sidebar-backdrop { display: none; }
+
+  @media (max-width: 768px) {
+    #sidebar-toggle { display: inline-block; }
+    #sidebar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 20;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      box-shadow: var(--shadow-md);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar-backdrop {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 15;
+    }
+    #sidebar-backdrop.open { display: block; }
   }
 
   main {
@@ -252,6 +359,33 @@
     border-top: 1px solid var(--border);
     margin: 10px 0;
   }
+  .msg.assistant .thinking {
+    margin-bottom: 10px;
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+  .msg.assistant .thinking summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+  }
+  .msg.assistant .thinking summary::-webkit-details-marker { display: none; }
+  .msg.assistant .thinking summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 4px;
+    transition: transform 0.15s ease;
+  }
+  .msg.assistant .thinking[open] summary::before {
+    transform: rotate(90deg);
+  }
+  .msg.assistant .thinking-body {
+    margin-top: 6px;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+    font-style: italic;
+  }
+  .msg.assistant .thinking-body > *:last-child { margin-bottom: 0; }
   @keyframes msg-in {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
@@ -328,6 +462,7 @@
 </head>
 <body>
   <header>
+    <button id="sidebar-toggle" aria-label="Toggle chat history">☰</button>
     <h1 class="brand">
       <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <defs>
@@ -347,15 +482,23 @@
     </div>
   </header>
 
-  <main>
-    <div id="chat-container">
-      <div id="messages"></div>
-      <form id="composer">
-        <textarea id="input" rows="1" placeholder="Type a message..." required></textarea>
-        <button type="submit" id="send-btn">Send</button>
-      </form>
-    </div>
-  </main>
+  <div class="app-body">
+    <aside id="sidebar">
+      <button id="new-chat-btn">+ New Chat</button>
+      <div id="thread-list"></div>
+    </aside>
+    <div id="sidebar-backdrop"></div>
+
+    <main>
+      <div id="chat-container">
+        <div id="messages"></div>
+        <form id="composer">
+          <textarea id="input" rows="1" placeholder="Type a message..." required></textarea>
+          <button type="submit" id="send-btn">Send</button>
+        </form>
+      </div>
+    </main>
+  </div>
 
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/dompurify.js"></script>
@@ -366,9 +509,182 @@
     const sendBtn = document.getElementById('send-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const modelSelect = document.getElementById('model-select');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const threadListEl = document.getElementById('thread-list');
 
-    const history = [];
+    let history = [];
     let activeController = null;
+
+    // Conversation threads persist in this browser via localStorage (no
+    // server-side storage). Each thread keeps its own messages and the model
+    // last used with it; `history` always points at the active thread's
+    // messages array, so pushing to it updates the thread in place.
+    const STORAGE_KEY = 'raygpt.threads.v1';
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return { threads: [], activeId: null };
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed.threads) ? parsed : { threads: [], activeId: null };
+      } catch {
+        return { threads: [], activeId: null };
+      }
+    }
+
+    let state = loadState();
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch {
+        // localStorage unavailable (private browsing, quota, etc.) — chat
+        // still works this session, it just won't persist across reloads.
+      }
+    }
+
+    function getActiveThread() {
+      return state.threads.find((t) => t.id === state.activeId) || null;
+    }
+
+    function makeThreadTitle(text) {
+      const trimmed = text.trim().replace(/\s+/g, ' ');
+      return trimmed.length > 40 ? trimmed.slice(0, 40) + '…' : trimmed;
+    }
+
+    function touchActiveThread() {
+      const thread = getActiveThread();
+      if (!thread) return;
+      thread.updatedAt = Date.now();
+      saveState();
+      renderThreadList();
+    }
+
+    function closeSidebarOnMobile() {
+      sidebar.classList.remove('open');
+      sidebarBackdrop.classList.remove('open');
+    }
+
+    function renderThreadList() {
+      threadListEl.innerHTML = '';
+      const sorted = [...state.threads].sort((a, b) => b.updatedAt - a.updatedAt);
+      for (const t of sorted) {
+        const item = document.createElement('div');
+        item.className = 'thread-item' + (t.id === state.activeId ? ' active' : '');
+        item.tabIndex = 0;
+        item.setAttribute('role', 'button');
+
+        const title = document.createElement('span');
+        title.className = 'thread-item-title';
+        title.textContent = t.title || 'New chat';
+        item.appendChild(title);
+
+        const del = document.createElement('button');
+        del.className = 'thread-item-delete';
+        del.textContent = '✕';
+        del.setAttribute('aria-label', 'Delete chat');
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteThread(t.id);
+        });
+        item.appendChild(del);
+
+        item.addEventListener('click', () => switchToThread(t.id));
+        item.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            switchToThread(t.id);
+          }
+        });
+
+        threadListEl.appendChild(item);
+      }
+    }
+
+    function renderHistory() {
+      messagesEl.innerHTML = '';
+      for (const m of history) {
+        const bubble = addBubble(m.role === 'user' ? 'user' : 'assistant', '');
+        if (m.role === 'assistant') {
+          renderAssistantText(bubble, m.content);
+        } else {
+          bubble.textContent = m.content;
+        }
+      }
+    }
+
+    function applyThreadModel(thread) {
+      if (thread.model && [...modelSelect.options].some((o) => o.value === thread.model)) {
+        modelSelect.value = thread.model;
+      }
+    }
+
+    function switchToThread(id) {
+      if (id === state.activeId) return closeSidebarOnMobile();
+      if (activeController) activeController.abort();
+      const thread = state.threads.find((t) => t.id === id);
+      if (!thread) return;
+      state.activeId = id;
+      history = thread.messages;
+      renderHistory();
+      applyThreadModel(thread);
+      renderThreadList();
+      saveState();
+      closeSidebarOnMobile();
+    }
+
+    function createThread() {
+      if (activeController) activeController.abort();
+      const thread = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+        title: '',
+        model: modelSelect.value || '',
+        messages: [],
+        updatedAt: Date.now(),
+      };
+      state.threads.push(thread);
+      state.activeId = thread.id;
+      history = thread.messages;
+      messagesEl.innerHTML = '';
+      renderThreadList();
+      saveState();
+      closeSidebarOnMobile();
+      input.focus();
+    }
+
+    function deleteThread(id) {
+      state.threads = state.threads.filter((t) => t.id !== id);
+      if (state.activeId !== id) {
+        renderThreadList();
+        saveState();
+        return;
+      }
+      state.activeId = null;
+      const next = [...state.threads].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      if (next) {
+        switchToThread(next.id);
+      } else {
+        createThread();
+      }
+    }
+
+    newChatBtn.addEventListener('click', createThread);
+    sidebarToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      sidebarBackdrop.classList.toggle('open');
+    });
+    sidebarBackdrop.addEventListener('click', closeSidebarOnMobile);
+
+    modelSelect.addEventListener('change', () => {
+      const thread = getActiveThread();
+      if (thread) {
+        thread.model = modelSelect.value;
+        saveState();
+      }
+    });
 
     async function loadModels() {
       try {
@@ -391,7 +707,21 @@
         // dropdown just stays empty; chat still works with the server's default model
       }
     }
-    loadModels();
+    (async () => {
+      await loadModels();
+      if (state.threads.length === 0) {
+        createThread();
+        return;
+      }
+      if (!getActiveThread()) {
+        state.activeId = [...state.threads].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+      }
+      const thread = getActiveThread();
+      history = thread.messages;
+      renderHistory();
+      applyThreadModel(thread);
+      renderThreadList();
+    })();
 
     function addBubble(role, text) {
       const div = document.createElement('div');
@@ -402,14 +732,32 @@
       return div;
     }
 
-    function renderAssistantText(bubble, text) {
+    function renderAssistantText(el, text) {
       if (window.marked && window.DOMPurify) {
-        bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+        el.innerHTML = DOMPurify.sanitize(marked.parse(text));
       } else {
         // Markdown libraries failed to load (CDN blocked, offline, etc.) — fall
         // back to plain text rather than breaking the chat.
-        bubble.textContent = text;
+        el.textContent = text;
       }
+    }
+
+    // Some reasoning models stream a flat `reasoning` string; others send a
+    // structured `reasoning_details` array. `reasoning.encrypted` entries are
+    // opaque provider-signed blobs, not human-readable text, so they're skipped.
+    function extractReasoningChunk(delta) {
+      if (typeof delta.reasoning === 'string' && delta.reasoning) {
+        return delta.reasoning;
+      }
+      if (Array.isArray(delta.reasoning_details)) {
+        let text = '';
+        for (const d of delta.reasoning_details) {
+          if (d.type === 'reasoning.text' && typeof d.text === 'string') text += d.text;
+          else if (d.type === 'reasoning.summary' && typeof d.summary === 'string') text += d.summary;
+        }
+        return text;
+      }
+      return '';
     }
 
     input.addEventListener('input', () => {
@@ -440,6 +788,9 @@
 
       addBubble('user', text);
       history.push({ role: 'user', content: text });
+      const activeThread = getActiveThread();
+      if (activeThread && !activeThread.title) activeThread.title = makeThreadTitle(text);
+      touchActiveThread();
       input.value = '';
       input.style.height = 'auto';
 
@@ -450,6 +801,17 @@
       input.disabled = true;
       const bubble = addBubble('pending', 'Thinking...');
       let assistantText = '';
+      let reasoningText = '';
+      let structured = false;
+
+      function ensureAssistantStructure() {
+        if (structured) return;
+        structured = true;
+        bubble.classList.remove('pending');
+        bubble.classList.add('assistant');
+        bubble.innerHTML =
+          '<details class="thinking" hidden><summary>Thinking</summary><div class="thinking-body"></div></details><div class="answer"></div>';
+      }
 
       try {
         const res = await fetch('/api/chat', {
@@ -501,14 +863,27 @@
               continue;
             }
 
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) {
+            const delta = json.choices?.[0]?.delta || {};
+
+            const reasoningChunk = extractReasoningChunk(delta);
+            if (reasoningChunk) {
+              ensureAssistantStructure();
+              reasoningText += reasoningChunk;
+              const thinkingEl = bubble.querySelector('.thinking');
+              thinkingEl.hidden = false;
+              thinkingEl.open = true;
+              renderAssistantText(bubble.querySelector('.thinking-body'), reasoningText);
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
+
+            if (delta.content) {
+              ensureAssistantStructure();
               if (!assistantText) {
-                bubble.classList.remove('pending');
-                bubble.classList.add('assistant');
+                const thinkingEl = bubble.querySelector('.thinking');
+                if (thinkingEl) thinkingEl.open = false; // collapse once the real answer starts
               }
-              assistantText += delta;
-              renderAssistantText(bubble, assistantText);
+              assistantText += delta.content;
+              renderAssistantText(bubble.querySelector('.answer'), assistantText);
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
           }
@@ -519,6 +894,7 @@
           addBubble('error', streamError);
         } else {
           history.push({ role: 'assistant', content: assistantText });
+          touchActiveThread();
         }
       } catch (err) {
         if (err.name === 'AbortError') {
@@ -526,6 +902,7 @@
             bubble.classList.remove('pending');
             bubble.classList.add('assistant');
             history.push({ role: 'assistant', content: assistantText });
+            touchActiveThread();
           } else {
             bubble.remove();
           }
