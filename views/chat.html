@@ -223,12 +223,13 @@
     gap: 6px;
     padding: 8px 10px;
     border-radius: 8px;
+    border: 1px solid var(--border);
     cursor: pointer;
     font-size: 13px;
     color: var(--text);
   }
   .thread-item:hover { background: var(--bubble-assistant); }
-  .thread-item.active { background: var(--bubble-assistant); font-weight: 600; }
+  .thread-item.active { background: var(--bubble-assistant); border-color: var(--accent); font-weight: 600; }
   .thread-item-title {
     flex: 1;
     overflow: hidden;
