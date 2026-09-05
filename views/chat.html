@@ -252,6 +252,33 @@
     border-top: 1px solid var(--border);
     margin: 10px 0;
   }
+  .msg.assistant .thinking {
+    margin-bottom: 10px;
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+  .msg.assistant .thinking summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+  }
+  .msg.assistant .thinking summary::-webkit-details-marker { display: none; }
+  .msg.assistant .thinking summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 4px;
+    transition: transform 0.15s ease;
+  }
+  .msg.assistant .thinking[open] summary::before {
+    transform: rotate(90deg);
+  }
+  .msg.assistant .thinking-body {
+    margin-top: 6px;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+    font-style: italic;
+  }
+  .msg.assistant .thinking-body > *:last-child { margin-bottom: 0; }
   @keyframes msg-in {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
@@ -402,14 +429,32 @@
       return div;
     }
 
-    function renderAssistantText(bubble, text) {
+    function renderAssistantText(el, text) {
       if (window.marked && window.DOMPurify) {
-        bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+        el.innerHTML = DOMPurify.sanitize(marked.parse(text));
       } else {
         // Markdown libraries failed to load (CDN blocked, offline, etc.) — fall
         // back to plain text rather than breaking the chat.
-        bubble.textContent = text;
+        el.textContent = text;
       }
+    }
+
+    // Some reasoning models stream a flat `reasoning` string; others send a
+    // structured `reasoning_details` array. `reasoning.encrypted` entries are
+    // opaque provider-signed blobs, not human-readable text, so they're skipped.
+    function extractReasoningChunk(delta) {
+      if (typeof delta.reasoning === 'string' && delta.reasoning) {
+        return delta.reasoning;
+      }
+      if (Array.isArray(delta.reasoning_details)) {
+        let text = '';
+        for (const d of delta.reasoning_details) {
+          if (d.type === 'reasoning.text' && typeof d.text === 'string') text += d.text;
+          else if (d.type === 'reasoning.summary' && typeof d.summary === 'string') text += d.summary;
+        }
+        return text;
+      }
+      return '';
     }
 
     input.addEventListener('input', () => {
@@ -450,6 +495,17 @@
       input.disabled = true;
       const bubble = addBubble('pending', 'Thinking...');
       let assistantText = '';
+      let reasoningText = '';
+      let structured = false;
+
+      function ensureAssistantStructure() {
+        if (structured) return;
+        structured = true;
+        bubble.classList.remove('pending');
+        bubble.classList.add('assistant');
+        bubble.innerHTML =
+          '<details class="thinking" hidden><summary>Thinking</summary><div class="thinking-body"></div></details><div class="answer"></div>';
+      }
 
       try {
         const res = await fetch('/api/chat', {
@@ -501,14 +557,27 @@
               continue;
             }
 
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) {
+            const delta = json.choices?.[0]?.delta || {};
+
+            const reasoningChunk = extractReasoningChunk(delta);
+            if (reasoningChunk) {
+              ensureAssistantStructure();
+              reasoningText += reasoningChunk;
+              const thinkingEl = bubble.querySelector('.thinking');
+              thinkingEl.hidden = false;
+              thinkingEl.open = true;
+              renderAssistantText(bubble.querySelector('.thinking-body'), reasoningText);
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
+
+            if (delta.content) {
+              ensureAssistantStructure();
               if (!assistantText) {
-                bubble.classList.remove('pending');
-                bubble.classList.add('assistant');
+                const thinkingEl = bubble.querySelector('.thinking');
+                if (thinkingEl) thinkingEl.open = false; // collapse once the real answer starts
               }
-              assistantText += delta;
-              renderAssistantText(bubble, assistantText);
+              assistantText += delta.content;
+              renderAssistantText(bubble.querySelector('.answer'), assistantText);
               messagesEl.scrollTop = messagesEl.scrollHeight;
             }
           }
