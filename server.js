@@ -97,21 +97,35 @@ app.post('/api/chat', requireAuth, async (req, res) => {
       body: JSON.stringify({
         model: process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
         messages,
+        stream: true,
       }),
     });
 
-    const data = await upstream.json();
-
     if (!upstream.ok) {
+      const data = await upstream.json().catch(() => ({}));
       return res
         .status(upstream.status)
         .json({ ok: false, error: data?.error?.message || 'OpenRouter request failed' });
     }
 
-    const reply = data?.choices?.[0]?.message?.content ?? '';
-    res.json({ ok: true, reply });
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(decoder.decode(value, { stream: true }));
+    }
+    res.end();
   } catch (err) {
-    res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });
+    if (!res.headersSent) {
+      res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });
+    } else {
+      res.end();
+    }
   }
 });
 
