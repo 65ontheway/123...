@@ -586,7 +586,11 @@
 
     function makeThreadTitle(text) {
       const trimmed = text.trim().replace(/\s+/g, ' ');
-      return trimmed.length > 40 ? trimmed.slice(0, 40) + '…' : trimmed;
+      // Cap well past anything the sidebar could ever visually fit (even at
+      // its max drag width), so the CSS ellipsis on .thread-item-title does
+      // the real, width-aware truncation — this cap only exists to avoid
+      // storing an entire pasted essay as a "title".
+      return trimmed.length > 200 ? trimmed.slice(0, 200) + '…' : trimmed;
     }
 
     function touchActiveThread() {
