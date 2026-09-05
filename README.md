@@ -15,10 +15,11 @@ cp .env.example .env
 Edit `.env`:
 
 - `OPENROUTER_API_KEY` — your key from https://openrouter.ai/keys
-- `OPENROUTER_MODEL` — any OpenRouter model slug (defaults to `openai/gpt-4o-mini`)
+- `OPENROUTER_MODEL` — any OpenRouter model slug (defaults to `meta-llama/llama-3.1-8b-instruct`); this is just the server's default — the chat page also has a model picker
 - `APP_USERNAME` / `APP_PASSWORD` — the login credentials
 - `SESSION_SECRET` — any long random string
 - `PORT` — defaults to 3000
+- `FACTS_FILE` — optional, defaults to `facts.md` (see below)
 
 ## Run
 
@@ -27,6 +28,17 @@ npm start
 ```
 
 Open http://localhost:3000, log in, and you're redirected to `/chat`.
+
+## Standing facts (`facts.md`)
+
+Anything in `facts.md` is sent to the model as a system message on every
+request, regardless of which model is selected. Edit and save the file any
+time — the server re-reads it automatically (checked on every request via its
+last-modified time), no restart needed. Keep it short: it's included, and
+billed, on every single message.
+
+To use a different file or location, set `FACTS_FILE` in `.env` to a path
+relative to the project root.
 
 ## How it works
 
