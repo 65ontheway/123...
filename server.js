@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -88,6 +89,24 @@ async function getLiveModelIds() {
   }
 }
 
+// A standing set of facts always included as a system message, independent of
+// which model is selected. Re-read whenever the file's mtime changes, so edits
+// take effect without restarting the server.
+const FACTS_FILE = path.join(__dirname, process.env.FACTS_FILE || 'facts.md');
+let factsCache = { content: '', mtimeMs: 0 };
+
+function loadFacts() {
+  try {
+    const mtimeMs = fs.statSync(FACTS_FILE).mtimeMs;
+    if (mtimeMs !== factsCache.mtimeMs) {
+      factsCache = { content: fs.readFileSync(FACTS_FILE, 'utf8').trim(), mtimeMs };
+    }
+  } catch {
+    factsCache = { content: '', mtimeMs: 0 };
+  }
+  return factsCache.content;
+}
+
 function credentialsMatch(a, b) {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -154,6 +173,9 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   }
   const selectedModel = VALID_MODEL_IDS.has(model) ? model : DEFAULT_MODEL;
 
+  const facts = loadFacts();
+  const upstreamMessages = facts ? [{ role: 'system', content: facts }, ...messages] : messages;
+
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: 'Server is missing OPENROUTER_API_KEY' });
@@ -170,7 +192,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
       },
       body: JSON.stringify({
         model: selectedModel,
-        messages,
+        messages: upstreamMessages,
         stream: true,
       }),
     });
