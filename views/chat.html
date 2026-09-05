@@ -188,6 +188,17 @@
     background: var(--panel-bg);
     overflow-y: auto;
   }
+  #sidebar-resizer {
+    width: 6px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.1s ease;
+  }
+  #sidebar-resizer:hover,
+  #sidebar-resizer.dragging {
+    background: var(--accent);
+  }
   #new-chat-btn {
     font-size: 14px;
     font-weight: 600;
@@ -267,6 +278,8 @@
       box-shadow: var(--shadow-md);
     }
     #sidebar.open { transform: translateX(0); }
+    #sidebar { max-width: 85vw; }
+    #sidebar-resizer { display: none; }
     #sidebar-backdrop {
       display: none;
       position: absolute;
@@ -503,6 +516,7 @@
       <button id="new-chat-btn">+ New Chat</button>
       <div id="thread-list"></div>
     </aside>
+    <div id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat history"></div>
     <div id="sidebar-backdrop"></div>
 
     <main>
@@ -527,6 +541,7 @@
     const modelSelect = document.getElementById('model-select');
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebarResizer = document.getElementById('sidebar-resizer');
     const sidebarBackdrop = document.getElementById('sidebar-backdrop');
     const newChatBtn = document.getElementById('new-chat-btn');
     const threadListEl = document.getElementById('thread-list');
@@ -740,6 +755,66 @@
       sidebarBackdrop.classList.toggle('open');
     });
     sidebarBackdrop.addEventListener('click', closeSidebarOnMobile);
+
+    // Drag-to-resize the sidebar. Width is remembered in localStorage so it
+    // stays put across reloads, same as the thread state.
+    const SIDEBAR_WIDTH_KEY = 'raygpt.sidebarWidth';
+    const MIN_SIDEBAR_WIDTH = 160;
+    const MAX_SIDEBAR_WIDTH = 480;
+
+    function applySidebarWidth(px) {
+      const clamped = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, px));
+      sidebar.style.width = clamped + 'px';
+    }
+
+    try {
+      const savedWidth = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (savedWidth) applySidebarWidth(parseInt(savedWidth, 10));
+    } catch {
+      // localStorage unavailable — sidebar just uses the default width
+    }
+
+    let resizing = false;
+
+    function startResize() {
+      resizing = true;
+      sidebarResizer.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    }
+
+    function doResize(clientX) {
+      if (!resizing) return;
+      const rect = sidebar.getBoundingClientRect();
+      applySidebarWidth(clientX - rect.left);
+    }
+
+    function endResize() {
+      if (!resizing) return;
+      resizing = false;
+      sidebarResizer.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebar.getBoundingClientRect().width)));
+      } catch {
+        // localStorage unavailable — width just won't persist across reloads
+      }
+    }
+
+    sidebarResizer.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      startResize();
+    });
+    window.addEventListener('mousemove', (e) => doResize(e.clientX));
+    window.addEventListener('mouseup', endResize);
+
+    sidebarResizer.addEventListener('touchstart', startResize, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (!resizing) return;
+      doResize(e.touches[0].clientX);
+    });
+    window.addEventListener('touchend', endResize);
 
     modelSelect.addEventListener('change', () => {
       const thread = getActiveThread();
