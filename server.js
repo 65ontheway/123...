@@ -35,7 +35,7 @@ const AVAILABLE_MODELS = [
   { id: 'meta-llama/llama-4-scout', label: 'Llama 4 Scout' },
   { id: 'mistralai/mistral-nemo', label: 'Mistral Nemo 12B' },
   { id: 'mistralai/mistral-small-3.2-24b-instruct', label: 'Mistral Small 3.2 24B' },
-  { id: 'mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B' },
+  { id: 'mistralai/mistral-7b-instruct-v0.3', label: 'Mistral 7B Instruct' },
   { id: 'qwen/qwen3-8b', label: 'Qwen3 8B' },
   { id: 'qwen/qwen3-14b', label: 'Qwen3 14B' },
   { id: 'qwen/qwen3-32b', label: 'Qwen3 32B' },
@@ -50,6 +50,34 @@ const AVAILABLE_MODELS = [
 ];
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || AVAILABLE_MODELS[0].id;
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
+
+// OpenRouter periodically deprecates/removes models. Rather than let a dead entry
+// sit in the dropdown until someone hits "No endpoints found", cross-check the
+// curated list against OpenRouter's live catalog and quietly drop anything that's
+// disappeared. Cached, and fails open to the full curated list if the catalog
+// fetch doesn't succeed, so a network hiccup never breaks the model picker.
+let modelCatalogCache = { ids: null, fetchedAt: 0 };
+const MODEL_CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+async function getLiveModelIds() {
+  const now = Date.now();
+  if (modelCatalogCache.ids && now - modelCatalogCache.fetchedAt < MODEL_CATALOG_TTL_MS) {
+    return modelCatalogCache.ids;
+  }
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/models', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return modelCatalogCache.ids;
+    const data = await res.json();
+    if (!Array.isArray(data?.data)) return modelCatalogCache.ids;
+    const ids = new Set(data.data.map((m) => m.id));
+    modelCatalogCache = { ids, fetchedAt: now };
+    return ids;
+  } catch {
+    return modelCatalogCache.ids;
+  }
+}
 
 function credentialsMatch(a, b) {
   const bufA = Buffer.from(a);
@@ -100,10 +128,13 @@ app.get('/chat', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'chat.html'));
 });
 
-app.get('/api/models', requireAuth, (req, res) => {
-  const models = AVAILABLE_MODELS.some((m) => m.id === DEFAULT_MODEL)
-    ? AVAILABLE_MODELS
-    : [{ id: DEFAULT_MODEL, label: `${DEFAULT_MODEL} (from .env)` }, ...AVAILABLE_MODELS];
+app.get('/api/models', requireAuth, async (req, res) => {
+  const liveIds = await getLiveModelIds();
+  const curated = liveIds ? AVAILABLE_MODELS.filter((m) => liveIds.has(m.id)) : AVAILABLE_MODELS;
+
+  const models = curated.some((m) => m.id === DEFAULT_MODEL)
+    ? curated
+    : [{ id: DEFAULT_MODEL, label: `${DEFAULT_MODEL} (from .env)` }, ...curated];
   res.json({ ok: true, models, default: DEFAULT_MODEL });
 });
 
