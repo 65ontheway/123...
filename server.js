@@ -10,9 +10,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Default 100kb body limit is too small once messages can carry base64-encoded
-// images; images are downscaled client-side first, but a multi-turn thread
-// resends its whole history (including past images) on every request.
-app.use(express.json({ limit: '20mb' }));
+// images and PDFs; images are downscaled client-side first, but a multi-turn
+// thread resends its whole history (including past attachments) on every request.
+app.use(express.json({ limit: '30mb' }));
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'dev-only-secret-change-me',
@@ -29,13 +29,21 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve the two browser-ready bundles used to render Markdown in the chat UI
-// directly from node_modules, so the page isn't dependent on a third-party CDN.
+// Serve browser-ready bundles directly from node_modules, so the page isn't
+// dependent on a third-party CDN: marked/DOMPurify render assistant Markdown,
+// mammoth/exceljs extract text from uploaded Word/Excel files client-side so
+// their contents can be attached as plain text without a server round-trip.
 app.get('/vendor/marked.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/marked/lib/marked.umd.js'));
 });
 app.get('/vendor/dompurify.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js'));
+});
+app.get('/vendor/mammoth.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/mammoth/mammoth.browser.min.js'));
+});
+app.get('/vendor/exceljs.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/exceljs/dist/exceljs.min.js'));
 });
 
 // Curated high-power open-weight models available through OpenRouter, listed
