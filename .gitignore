@@ -1,4 +1,4 @@
 node_modules/
 .env
 facts.md
-roster.json
+data/rosters/

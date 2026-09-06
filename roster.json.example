@@ -1,37 +1,13 @@
 {
   "formation": "2-3-1",
   "players": [
-    {
-      "name": "Player One",
-      "skills": { "goalkeeper": 8, "defender": 5, "midfielder": 4, "forward": 3 }
-    },
-    {
-      "name": "Player Two",
-      "skills": { "goalkeeper": 2, "defender": 8, "midfielder": 6, "forward": 4 }
-    },
-    {
-      "name": "Player Three",
-      "skills": { "goalkeeper": 2, "defender": 7, "midfielder": 6, "forward": 5 }
-    },
-    {
-      "name": "Player Four",
-      "skills": { "goalkeeper": 3, "defender": 5, "midfielder": 8, "forward": 6 }
-    },
-    {
-      "name": "Player Five",
-      "skills": { "goalkeeper": 2, "defender": 4, "midfielder": 7, "forward": 6 }
-    },
-    {
-      "name": "Player Six",
-      "skills": { "goalkeeper": 3, "defender": 6, "midfielder": 7, "forward": 5 }
-    },
-    {
-      "name": "Player Seven",
-      "skills": { "goalkeeper": 2, "defender": 4, "midfielder": 5, "forward": 8 }
-    },
-    {
-      "name": "Player Eight",
-      "skills": { "goalkeeper": 4, "defender": 5, "midfielder": 5, "forward": 6 }
-    }
+    { "name": "Player One", "skills": { "offense": 2, "defense": 3, "goalie": 5 } },
+    { "name": "Player Two", "skills": { "offense": 3, "defense": 5, "goalie": 2 } },
+    { "name": "Player Three", "skills": { "offense": 3, "defense": 4, "goalie": 2 } },
+    { "name": "Player Four", "skills": { "offense": 4, "defense": 3, "goalie": 2 } },
+    { "name": "Player Five", "skills": { "offense": 4, "defense": 2, "goalie": 1 } },
+    { "name": "Player Six", "skills": { "offense": 3, "defense": 4, "goalie": 2 } },
+    { "name": "Player Seven", "skills": { "offense": 5, "defense": 2, "goalie": 1 } },
+    { "name": "Player Eight", "skills": { "offense": 3, "defense": 3, "goalie": 3 } }
   ]
 }

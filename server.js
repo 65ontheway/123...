@@ -299,19 +299,20 @@ async function pipeUpstreamStream(upstream, res) {
 
 // The Soccer Lineup agent is a two-call tool-calling flow rather than a
 // single passthrough: first a forced, non-streaming call asks the model to
-// turn the coach's message into structured constraints (formation/resting/
-// pinned) via the set_lineup tool; the app computes the actual lineup from
-// those constraints in plain JS (see lib/soccerLineup.js — an LLM asked to
-// fill 7 slots from a roster will occasionally double-book a position);
-// then a second, streamed call asks the model to explain that computed
-// result in natural language, which streams back to the client exactly
-// like the plain chat flow.
-async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, maxTokens, apiKey }) {
-  const roster = soccerLineup.loadRoster();
+// turn the coach's message into structured, per-quarter constraints
+// (formation/resting/pinned) via the set_game_lineup tool; the app schedules
+// the actual 4-quarter game from those constraints in plain JS (see
+// lib/soccerLineup.js — an LLM asked to fill 7 slots x 4 quarters while
+// enforcing AYSO's "3 quarters before a 4th" rule will drift on that
+// bookkeeping as the roster grows); then a second, streamed call asks the
+// model to explain that computed schedule in natural language, which
+// streams back to the client exactly like the plain chat flow.
+async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, maxTokens, apiKey, username }) {
+  const roster = soccerLineup.loadRoster(username);
   if (!roster) {
     return res.status(500).json({
       ok: false,
-      error: 'Soccer Lineup needs a roster.json file at the project root (see roster.json.example).',
+      error: `Soccer Lineup needs a roster file at ${soccerLineup.ROSTER_DIR}/${username}.json (see roster.json.example).`,
     });
   }
 
@@ -319,10 +320,12 @@ async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, ma
   const systemMessage = {
     role: 'system',
     content:
-      `You are a soccer lineup assistant for a 7v7 team. Today's available roster: ${rosterNames}. ` +
-      'Turn the coach\'s request into the set_lineup tool call — you never compute the lineup yourself. ' +
-      'After you receive the computed result, present it clearly (e.g. a short list by position), ' +
-      'mention who is on the bench, and call out any warnings in plain language.',
+      `You are a soccer lineup assistant for a 7v7 team playing a standard 4-quarter AYSO game. ` +
+      `Today's available roster: ${rosterNames}. ` +
+      'Turn the coach\'s request into the set_game_lineup tool call, with resting/pinned constraints ' +
+      'keyed by quarter ("1"-"4") — you never compute the schedule yourself. ' +
+      'After you receive the computed result, list each quarter\'s lineup, mention who is on the bench ' +
+      'each quarter, note how many quarters everyone played, and call out any warnings in plain language.',
   };
   const baseHeaders = {
     Authorization: `Bearer ${apiKey}`,
@@ -337,8 +340,8 @@ async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, ma
     body: JSON.stringify({
       model: selectedModel,
       messages: [systemMessage, ...upstreamMessages],
-      tools: [soccerLineup.SET_LINEUP_TOOL],
-      tool_choice: { type: 'function', function: { name: 'set_lineup' } },
+      tools: [soccerLineup.SET_GAME_LINEUP_TOOL],
+      tool_choice: { type: 'function', function: { name: 'set_game_lineup' } },
       stream: false,
     }),
   });
@@ -362,8 +365,8 @@ async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, ma
     return res.status(502).json({ ok: false, error: 'Model returned an invalid lineup request.' });
   }
 
-  const result = soccerLineup.computeLineup(roster, constraints);
-  const toolResultContent = soccerLineup.formatLineupResult(result);
+  const result = soccerLineup.computeGameLineup(roster, constraints);
+  const toolResultContent = soccerLineup.formatGameLineupResult(result);
 
   const explainRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -411,7 +414,13 @@ app.post('/api/chat', requireAuth, async (req, res) => {
 
   if (selectedAgent === soccerLineup.AGENT_ID) {
     try {
-      return await handleSoccerLineupChat(res, { upstreamMessages, selectedModel, maxTokens, apiKey });
+      return await handleSoccerLineupChat(res, {
+        upstreamMessages,
+        selectedModel,
+        maxTokens,
+        apiKey,
+        username: req.session.username,
+      });
     } catch (err) {
       if (!res.headersSent) {
         return res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });

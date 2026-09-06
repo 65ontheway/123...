@@ -90,34 +90,48 @@ tied to any one chat):
 ## Soccer Lineup agent
 
 Select **Soccer Lineup** from the Agent dropdown and describe what you want
-in plain English — e.g. "Rest Emma this half, put Sarah at forward, fill
-the rest by skill." The model doesn't compute the lineup itself: it only
-turns your request into structured constraints (formation, who's resting,
-who's pinned to a position), and the app fills the remaining slots
-deterministically from `roster.json`, picking the best available player per
-position by skill rating. That split exists because an LLM asked to fill 7
-slots from a roster will occasionally double-book a position or drop a
-player — the actual assignment is plain code, not a guess.
+in plain English — e.g. "Rest Emma the first half, put Sarah at forward in
+the third quarter." The model doesn't schedule the game itself: it only
+turns your request into structured, per-quarter constraints (formation,
+who's resting each quarter, who's pinned to a position each quarter), and
+the app schedules all 4 quarters deterministically. That split exists
+because an LLM asked to fill 7 slots x 4 quarters — while also enforcing
+AYSO's fairness rule below — will drift on that bookkeeping as the roster
+grows; the actual scheduling is plain code, not a guess.
+
+**AYSO fairness rule, enforced by code, not the model:** every player plays
+3 quarters before anyone plays a 4th. Each quarter's open slots are filled
+by whoever has played the fewest quarters so far (skill rating is only the
+tiebreaker), which naturally produces this distribution. If an explicit
+request you make (e.g. pinning the same player to a position across
+multiple quarters) would force someone into a 4th quarter early, the
+response says so explicitly rather than silently violating the rule or
+silently overriding your request.
 
 Setup:
 
 ```bash
-cp roster.json.example roster.json
+mkdir -p data/rosters
+cp roster.json.example data/rosters/<your-login-username>.json
 ```
 
-Edit `roster.json` with your real roster — a `formation` (see the four
+The filename must match the username you log in with (e.g. `admin.json` if
+`APP_USERNAME=admin`) — rosters are isolated per account so player data is
+never shared between logins, even though today there's only the one
+account. Edit it with your real roster — a `formation` (see the four
 supported below) and a `players` array, each with a `name` and a `skills`
-object rating them 1-10 at each position (`goalkeeper`, `defender`,
-`midfielder`, `forward`). Like `facts.md`, `roster.json` is git-ignored
-(it's real kids' names and stats) and re-read automatically when it
-changes — no restart needed.
+object rating them **1-5** on `offense`, `defense`, and `goalie`. A
+midfielder's fit for a slot is scored as the average of `offense` and
+`defense`, since that position plays both ways. Like `facts.md`, everything
+under `data/rosters/` is git-ignored (it's real kids' names and stats) and
+re-read automatically when it changes — no restart needed.
 
-Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. You
-can set one as `roster.json`'s default or name one per request ("set the
-lineup in a 3-2-1"). If a request can't be fully satisfied (an unrecognized
-name, two players pinned to the same slot, more players resting than the
-roster can cover), the response explains what happened instead of silently
-guessing.
+Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. Set
+one as your roster file's default or name one per request ("set the lineup
+in a 3-2-1"). If a request can't be fully satisfied (an unrecognized name,
+two players pinned to the same slot in the same quarter, more players
+resting than the roster can cover), the response explains what happened
+instead of silently guessing.
 
 ## Auto-generated chat titles
 
@@ -154,5 +168,6 @@ title just stays as-is rather than retrying on every later message.
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
 - `lib/soccerLineup.js` — the Soccer Lineup agent's domain logic (reading
-  `roster.json`, the `set_lineup` tool definition, and the deterministic
-  lineup-assignment algorithm), kept out of `server.js` as its own module.
+  the per-account roster file, the `set_game_lineup` tool definition, and
+  the deterministic 4-quarter scheduling algorithm), kept out of `server.js`
+  as its own module.
