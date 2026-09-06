@@ -51,7 +51,7 @@ relative to the project root.
 
 The composer has two buttons:
 
-- **🖼️ Image** — some OpenRouter models can see images, others can't. The chat
+- **📷 Image** — some OpenRouter models can see images, others can't. The chat
   page checks each model's actual capability (via OpenRouter's live catalog,
   the same data already used to prune dead models from the picker) and only
   shows this button when the currently selected model supports image input.
