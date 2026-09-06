@@ -1300,48 +1300,104 @@
       return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
     }
 
-    imageBtn.addEventListener('click', () => imageInput.click());
+    // Shared by the two file pickers and by paste-to-attach: figures out what
+    // kind of attachment a File is (by MIME type first, falling back to its
+    // extension, since a pasted screenshot has a type but often no real name)
+    // and stages it the same way regardless of how it arrived.
+    const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const XLSX_MIMES = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+    ];
 
-    imageInput.addEventListener('change', async () => {
-      const files = [...imageInput.files];
-      imageInput.value = ''; // allow re-selecting the same file later
+    async function ingestFile(file) {
+      const ext = (file.name || '').toLowerCase().split('.').pop();
+
+      if (file.type.startsWith('image/')) {
+        // Mirrors the image button's own gating: a model that can't see
+        // images shouldn't silently receive one via paste either.
+        if (modelCapabilities.get(modelSelect.value) !== true) return;
+        const dataUrl = await downscaleImage(file);
+        stagedAttachments.push({
+          id: newAttachmentId(),
+          kind: 'image',
+          name: file.name || 'pasted-image.png',
+          dataUrl,
+        });
+        return;
+      }
+
+      if (file.type === 'application/pdf' || ext === 'pdf') {
+        const dataUrl = await fileToDataUrl(file);
+        stagedAttachments.push({
+          id: newAttachmentId(),
+          kind: 'pdf',
+          name: file.name || 'document.pdf',
+          dataUrl,
+        });
+      } else if (file.type === DOCX_MIME || ext === 'docx') {
+        const text = await extractDocxText(file);
+        stagedAttachments.push({
+          id: newAttachmentId(),
+          kind: 'doc',
+          name: file.name || 'document.docx',
+          text,
+        });
+      } else if (XLSX_MIMES.includes(file.type) || ext === 'xlsx' || ext === 'xls') {
+        const text = await extractSpreadsheetText(file);
+        stagedAttachments.push({
+          id: newAttachmentId(),
+          kind: 'doc',
+          name: file.name || 'spreadsheet.xlsx',
+          text,
+        });
+      }
+      // Anything else (e.g. legacy .doc) is silently skipped rather than
+      // blocking the rest of a multi-file paste/selection.
+    }
+
+    async function ingestFiles(files) {
       for (const file of files) {
-        if (!file.type.startsWith('image/')) continue;
         try {
-          const dataUrl = await downscaleImage(file);
-          stagedAttachments.push({ id: newAttachmentId(), kind: 'image', name: file.name, dataUrl });
+          await ingestFile(file);
         } catch {
-          // skip files that fail to decode rather than blocking the rest
+          // skip files that fail to decode/parse rather than blocking the rest
         }
       }
       renderAttachmentPreviews();
+    }
+
+    imageBtn.addEventListener('click', () => imageInput.click());
+
+    imageInput.addEventListener('change', () => {
+      const files = [...imageInput.files];
+      imageInput.value = ''; // allow re-selecting the same file later
+      ingestFiles(files);
     });
 
     fileBtn.addEventListener('click', () => fileInput.click());
 
-    fileInput.addEventListener('change', async () => {
+    fileInput.addEventListener('change', () => {
       const files = [...fileInput.files];
       fileInput.value = ''; // allow re-selecting the same file later
-      for (const file of files) {
-        const ext = file.name.toLowerCase().split('.').pop();
-        try {
-          if (ext === 'pdf') {
-            const dataUrl = await fileToDataUrl(file);
-            stagedAttachments.push({ id: newAttachmentId(), kind: 'pdf', name: file.name, dataUrl });
-          } else if (ext === 'docx') {
-            const text = await extractDocxText(file);
-            stagedAttachments.push({ id: newAttachmentId(), kind: 'doc', name: file.name, text });
-          } else if (ext === 'xlsx' || ext === 'xls') {
-            const text = await extractSpreadsheetText(file);
-            stagedAttachments.push({ id: newAttachmentId(), kind: 'doc', name: file.name, text });
-          }
-          // Other extensions (e.g. legacy .doc) aren't offered by the file
-          // picker's accept filter and are silently skipped here too.
-        } catch {
-          // skip files that fail to parse rather than blocking the rest
+      ingestFiles(files);
+    });
+
+    // Paste a screenshot (or a file copied from Finder/Explorer) straight
+    // into the message box instead of saving it and using the attach buttons.
+    input.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files = [];
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) files.push(file);
         }
       }
-      renderAttachmentPreviews();
+      if (files.length === 0) return; // nothing pasted but text — let it through normally
+      e.preventDefault();
+      ingestFiles(files);
     });
 
     function renderAssistantText(el, text) {

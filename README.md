@@ -71,6 +71,12 @@ The composer has two buttons:
 Both kinds of attachments persist in thread history, so re-opening an old
 chat shows the same thumbnails/file chips as when they were sent.
 
+You can also skip both buttons and just paste (Cmd/Ctrl+V) directly into the
+message box — a screenshot, a copied image, or a file copied from Finder/
+Explorer. It's routed through the exact same logic as the buttons, so the
+same rules apply (an image is silently ignored if the selected model can't
+see images; a PDF/Word/Excel file works regardless of model).
+
 ## Sidebar settings
 
 Below the chat list, the sidebar has two dropdowns (global settings, not
