@@ -35,20 +35,22 @@ app.get('/vendor/dompurify.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js'));
 });
 
-// Curated high-power open-weight models available through OpenRouter. The
-// first entry is a fixed mid-range model labeled as the default (not
-// OpenRouter's own dynamic auto-router) — the sensible choice for anything
-// that isn't a heavy question; the rest are flagship-tier options for when
-// more firepower is wanted.
+// Curated high-power open-weight models available through OpenRouter, listed
+// cheapest to most expensive (per-token pricing, input and output orderings
+// happen to agree). Qwen3.8 27B is a fixed mid-range model labeled as the
+// default (not OpenRouter's own dynamic auto-router) — the sensible choice
+// for anything that isn't a heavy question; the rest are flagship-tier
+// options for when more firepower is wanted.
 const AVAILABLE_MODELS = [
+  { id: 'deepseek/deepseek-v3.2', label: 'DeepSeek V3.2' },
   { id: 'qwen/qwen3.8-27b', label: 'Qwen3.8 27B (Default)' },
-  { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
+  { id: 'tencent/hy4-preview', label: 'Hy4 Preview' },
   { id: 'z-ai/glm-5.3', label: 'GLM-5.3' },
-  { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1' },
-  { id: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6' },
-  { id: 'google/gemma-4-31b-it', label: 'Gemma 4 31B' },
+  { id: 'meta/muse-spark-1.2', label: 'Muse Spark 1.2' },
+  { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
+  { id: 'moonshotai/kimi-k3', label: 'Kimi K3' },
 ];
-const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || AVAILABLE_MODELS[0].id;
+const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3.8-27b';
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
 
 // OpenRouter periodically deprecates/removes models. Rather than let a dead entry
