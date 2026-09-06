@@ -84,9 +84,40 @@ tied to any one chat):
 - **Response length** — Short (500 tokens), Medium (1000, default), or Long
   (no cap — bounded only by the model's own limit). Applies to the next
   message sent, from any chat.
-- **Agent** — no real agents exist yet; this is the wiring (server endpoint,
-  request field, validation) for a feature landing later. Selecting the one
-  placeholder entry has no effect today.
+- **Agent** — **General Assistant** is the plain chat flow. **Soccer Lineup**
+  is a real tool-calling agent — see below.
+
+## Soccer Lineup agent
+
+Select **Soccer Lineup** from the Agent dropdown and describe what you want
+in plain English — e.g. "Rest Emma this half, put Sarah at forward, fill
+the rest by skill." The model doesn't compute the lineup itself: it only
+turns your request into structured constraints (formation, who's resting,
+who's pinned to a position), and the app fills the remaining slots
+deterministically from `roster.json`, picking the best available player per
+position by skill rating. That split exists because an LLM asked to fill 7
+slots from a roster will occasionally double-book a position or drop a
+player — the actual assignment is plain code, not a guess.
+
+Setup:
+
+```bash
+cp roster.json.example roster.json
+```
+
+Edit `roster.json` with your real roster — a `formation` (see the four
+supported below) and a `players` array, each with a `name` and a `skills`
+object rating them 1-10 at each position (`goalkeeper`, `defender`,
+`midfielder`, `forward`). Like `facts.md`, `roster.json` is git-ignored
+(it's real kids' names and stats) and re-read automatically when it
+changes — no restart needed.
+
+Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. You
+can set one as `roster.json`'s default or name one per request ("set the
+lineup in a 3-2-1"). If a request can't be fully satisfied (an unrecognized
+name, two players pinned to the same slot, more players resting than the
+roster can cover), the response explains what happened instead of silently
+guessing.
 
 ## Auto-generated chat titles
 
@@ -122,3 +153,6 @@ title just stays as-is rather than retrying on every later message.
   Like everything else in `public/`, all of these are served unauthenticated
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
+- `lib/soccerLineup.js` — the Soccer Lineup agent's domain logic (reading
+  `roster.json`, the `set_lineup` tool definition, and the deterministic
+  lineup-assignment algorithm), kept out of `server.js` as its own module.
