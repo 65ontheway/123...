@@ -35,12 +35,13 @@ app.get('/vendor/dompurify.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js'));
 });
 
-// Curated high-power open-weight models available through OpenRouter. "Auto" is
-// a friendly label over a fixed mid-range model (not OpenRouter's own dynamic
-// auto-router) — the sensible default for anything that isn't a heavy question;
-// the rest are flagship-tier options for when more firepower is wanted.
+// Curated high-power open-weight models available through OpenRouter. The
+// first entry is a fixed mid-range model labeled as the default (not
+// OpenRouter's own dynamic auto-router) — the sensible choice for anything
+// that isn't a heavy question; the rest are flagship-tier options for when
+// more firepower is wanted.
 const AVAILABLE_MODELS = [
-  { id: 'qwen/qwen3.8-27b', label: 'Auto' },
+  { id: 'qwen/qwen3.8-27b', label: 'Qwen3.8 27B (Default)' },
   { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
   { id: 'z-ai/glm-5.3', label: 'GLM-5.3' },
   { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1' },
