@@ -1,0 +1,80 @@
+/* Theme tokens (light + dark), the box-sizing reset, and the app shell's
+   root height/font. Loaded first — every other stylesheet assumes these
+   custom properties exist. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f5f5f7;
+  --panel-bg: #ffffff;
+  --header-bg: rgba(255, 255, 255, 0.78);
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --border: #d2d2d7;
+  --accent: #0071e3;
+  --accent-2: #6c5ce7;
+  --accent-hover: #0077ed;
+  --bubble-user: #2f6cad;
+  --bubble-user-text: #ffffff;
+  --bubble-assistant: #eef0f2;
+  --bubble-assistant-text: #1d1d1f;
+  --error: #d70015;
+  --code-bg: rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --panel-bg: #1c1c1e;
+    --header-bg: rgba(20, 20, 22, 0.7);
+    --text: #f5f5f7;
+    --muted: #98989d;
+    --border: #3a3a3c;
+    --accent: #0a84ff;
+    --accent-2: #9d8cff;
+    --accent-hover: #3699ff;
+    --bubble-user: #3878b8;
+    --bubble-user-text: #ffffff;
+    --bubble-assistant: #2c2c2e;
+    --bubble-assistant-text: #f5f5f7;
+    --error: #ff453a;
+    --code-bg: rgba(255, 255, 255, 0.1);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+  }
+}
+* { box-sizing: border-box; }
+html, body {
+  height: 100%;
+  height: 100dvh; /* dynamic viewport height: accounts for mobile Safari's collapsing toolbar */
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shared focus-ring policy for every focusable custom control across the
+   page. Kept centralized here (rather than duplicated per component) since
+   it's one accessibility decision, not a per-component style choice —
+   component stylesheets are free to override it locally (see
+   .suggestion-card in messages.css, which swaps the ring for a border/
+   background change instead). */
+#model-select:focus-visible,
+#logout-btn:focus-visible,
+#send-btn:focus-visible,
+#sidebar-toggle:focus-visible,
+#new-chat-btn:focus-visible,
+.thread-item:focus-visible,
+.thread-item-rename:focus-visible,
+.thread-item-delete:focus-visible,
+.sidebar-setting select:focus-visible,
+#attach-btn:focus-visible,
+.suggestion-card:focus-visible,
+#input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

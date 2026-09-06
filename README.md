@@ -105,8 +105,20 @@ title just stays as-is rather than retrying on every later message.
   `/chat/completions` endpoint using the server-side API key.
 - `views/chat.html` — chat page markup only. Served exclusively through the
   authenticated `GET /chat` route.
-- `public/chat.css` / `public/chat.js` — the chat page's styling and client
-  logic (thread state, streaming, attachments, etc.), split out of the HTML
-  file into their own files. Like everything else in `public/`, these are
-  served unauthenticated (there's nothing sensitive in them — the API key
-  never leaves the server), the same way `/vendor/*.js` already are.
+- `public/css/` — the chat page's styling, one file per UI area:
+  `base.css` (theme tokens/reset), `header.css`, `sidebar.css`,
+  `messages.css` (chat transcript + empty state), `composer.css`.
+- `public/js/` — the chat page's client logic as real ES modules (loaded via
+  `<script type="module">`, no build step), one per concern:
+  - `state.js` — thread data, localStorage persistence, thread lifecycle
+  - `settings.js` — model/agent catalog, response-length, image capability
+  - `sidebar.js` — thread list UI, rename, resize, mobile drawer
+  - `attachments.js` — staging/extracting images, PDFs, Word/Excel; the
+    attach menu; paste-to-attach
+  - `messages.js` — rendering bubbles, Markdown, the empty-state cards
+  - `chat.js` — the entry point: composer send/streaming flow and bootstrap;
+    the only file that imports from all the others
+
+  Like everything else in `public/`, all of these are served unauthenticated
+  (there's nothing sensitive in them — the API key never leaves the server),
+  the same way `/vendor/*.js` already are.

@@ -1,0 +1,118 @@
+/* Top bar: brand mark, model picker, log out, and the mobile hamburger
+   that toggles the sidebar (defined here since it's a header control, even
+   though the drawer it opens is styled in sidebar.css). */
+
+header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 20px 28px;
+  background: var(--header-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
+  z-index: 1;
+}
+@media (max-width: 480px) {
+  header { padding: 14px 16px; }
+  .brand-name { font-size: 19px; }
+  #model-select { max-width: 130px; }
+}
+header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  opacity: 0.7;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.brand-mark {
+  flex-shrink: 0;
+}
+.brand-name {
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.brand-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bubble-assistant);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#model-select {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  cursor: pointer;
+  max-width: 200px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+#model-select:hover { border-color: var(--muted); }
+#logout-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+#logout-btn:hover { border-color: var(--muted); background: var(--bubble-assistant); }
+
+#sidebar-toggle {
+  display: none;
+  font-size: 18px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  #sidebar-toggle { display: inline-block; }
+
+  /* Touch targets: bump these to the standard 44x44px minimum, even where
+     desktop's mouse-oriented density is smaller. */
+  #sidebar-toggle {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  #logout-btn,
+  #model-select {
+    min-height: 44px;
+  }
+}
