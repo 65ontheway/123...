@@ -35,28 +35,18 @@ app.get('/vendor/dompurify.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js'));
 });
 
-// Open-weight models commonly run on local/home hardware (Ollama, LM Studio, etc.),
-// served here through OpenRouter. Flagship closed/hosted-only tiers (e.g. "Max") are
-// intentionally left out.
+// Curated high-power open-weight models available through OpenRouter. The
+// first entry is a fixed mid-range model labeled as the default (not
+// OpenRouter's own dynamic auto-router) — the sensible choice for anything
+// that isn't a heavy question; the rest are flagship-tier options for when
+// more firepower is wanted.
 const AVAILABLE_MODELS = [
-  { id: 'meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B' },
-  { id: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' },
-  { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-  { id: 'meta-llama/llama-4-scout', label: 'Llama 4 Scout' },
-  { id: 'mistralai/mistral-nemo', label: 'Mistral Nemo 12B' },
-  { id: 'mistralai/mistral-small-3.2-24b-instruct', label: 'Mistral Small 3.2 24B' },
-  { id: 'mistralai/mistral-7b-instruct-v0.3', label: 'Mistral 7B Instruct' },
-  { id: 'qwen/qwen3-8b', label: 'Qwen3 8B' },
-  { id: 'qwen/qwen3-14b', label: 'Qwen3 14B' },
-  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B' },
-  { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen2.5 72B' },
-  { id: 'qwen/qwen2.5-coder-7b-instruct', label: 'Qwen2.5 Coder 7B' },
-  { id: 'google/gemma-3-12b-it', label: 'Gemma 3 12B' },
-  { id: 'google/gemma-3-27b-it', label: 'Gemma 3 27B' },
-  { id: 'microsoft/phi-4', label: 'Phi-4 14B' },
-  { id: 'deepseek/deepseek-r1-distill-llama-8b', label: 'DeepSeek R1 Distill Llama 8B' },
-  { id: 'deepseek/deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 Distill Qwen 32B' },
-  { id: 'deepseek/deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill Llama 70B' },
+  { id: 'qwen/qwen3.8-27b', label: 'Qwen3.8 27B (Default)' },
+  { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
+  { id: 'z-ai/glm-5.3', label: 'GLM-5.3' },
+  { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1' },
+  { id: 'moonshotai/kimi-k2.6', label: 'Kimi K2.6' },
+  { id: 'google/gemma-4-31b-it', label: 'Gemma 4 31B' },
 ];
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || AVAILABLE_MODELS[0].id;
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
