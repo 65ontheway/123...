@@ -321,11 +321,13 @@ async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, ma
     content:
       'You are a soccer lineup assistant for a 7v7 team playing a standard 4-quarter AYSO game. ' +
       `Today's roster:\n${rosterDescription}\n\n` +
-      'You have two tools and must always call exactly one, based on what the coach is asking for:\n' +
+      'You have two tools, and should call one only when the coach is actually asking you to do that ' +
+      'action right now — not for a question, a greeting, or a "can I give you my roster?" kind of check-in, ' +
+      'which you should just answer normally in plain text instead:\n' +
       '- manage_roster: the coach wants to add, update, or remove players (e.g. "add Sarah, she\'s a 4 offense 2 defense 1 goalie", "remove Jenny", "bump Emma\'s defense to a 4").\n' +
       '- set_game_lineup: the coach wants a lineup/schedule set for a game, with resting/pinned constraints keyed by quarter ("1"-"4").\n' +
       'You never edit the roster or compute a schedule yourself — the app does that from your tool call. ' +
-      'After you receive the result, explain it clearly and warmly: for a roster change, confirm what changed; ' +
+      'After you receive a tool result, explain it clearly and warmly: for a roster change, confirm what changed; ' +
       'for a lineup, list each quarter, the bench, quarters played per player, and any warnings in plain language.',
   };
   const baseHeaders = {
@@ -342,8 +344,9 @@ async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, ma
       model: selectedModel,
       messages: [systemMessage, ...upstreamMessages],
       tools: [soccerLineup.SET_GAME_LINEUP_TOOL, soccerLineup.MANAGE_ROSTER_TOOL],
-      tool_choice: 'required',
+      tool_choice: 'auto',
       stream: false,
+      ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
     }),
   });
   if (!toolCallRes.ok) {
@@ -356,7 +359,20 @@ async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, ma
   const assistantMessage = toolCallData?.choices?.[0]?.message;
   const toolCall = assistantMessage?.tool_calls?.[0];
   if (!toolCall) {
-    return res.status(502).json({ ok: false, error: 'Model did not return an action — try rephrasing.' });
+    // Not every message to this agent asks for an action — a question or a
+    // check-in should just get a normal reply, not an error. The reply is
+    // already fully generated (this call wasn't streamed), so send it back
+    // as a single chunk in the same SSE shape the frontend already parses.
+    const plainReply = assistantMessage?.content;
+    if (!plainReply) {
+      return res.status(502).json({ ok: false, error: 'Model did not return a response — try rephrasing.' });
+    }
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: plainReply } }] })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    return res.end();
   }
 
   let args;
