@@ -53,6 +53,19 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3.8-27b';
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
 
+// Response length is chosen per-message from the sidebar rather than fixed
+// server-side. "long" sends no max_tokens at all (bounded only by the
+// model's own limit) rather than some arbitrarily large number.
+const RESPONSE_LENGTH_TOKENS = { short: 500, medium: 1000, long: null };
+const DEFAULT_RESPONSE_LENGTH = 'medium';
+
+// No real agents yet — this is the plumbing (endpoint, validation, request
+// wiring) for a feature landing later. The single placeholder entry is a
+// no-op today; POST /api/chat already accepts and validates an `agent` field
+// so nothing else needs to change when real agents are added.
+const AVAILABLE_AGENTS = [{ id: 'default', label: 'General Assistant' }];
+const VALID_AGENT_IDS = new Set(AVAILABLE_AGENTS.map((a) => a.id));
+
 // OpenRouter periodically deprecates/removes models. Rather than let a dead entry
 // sit in the dropdown until someone hits "No endpoints found", cross-check the
 // curated list against OpenRouter's live catalog and quietly drop anything that's
@@ -158,12 +171,20 @@ app.get('/api/models', requireAuth, async (req, res) => {
   res.json({ ok: true, models, default: DEFAULT_MODEL });
 });
 
+app.get('/api/agents', requireAuth, (req, res) => {
+  res.json({ ok: true, agents: AVAILABLE_AGENTS, default: AVAILABLE_AGENTS[0].id });
+});
+
 app.post('/api/chat', requireAuth, async (req, res) => {
-  const { messages, model } = req.body || {};
+  const { messages, model, responseLength, agent } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ ok: false, error: 'messages array is required' });
   }
   const selectedModel = VALID_MODEL_IDS.has(model) ? model : DEFAULT_MODEL;
+  const selectedAgent = VALID_AGENT_IDS.has(agent) ? agent : AVAILABLE_AGENTS[0].id; // no-op today
+  const maxTokens = Object.prototype.hasOwnProperty.call(RESPONSE_LENGTH_TOKENS, responseLength)
+    ? RESPONSE_LENGTH_TOKENS[responseLength]
+    : RESPONSE_LENGTH_TOKENS[DEFAULT_RESPONSE_LENGTH];
 
   const facts = loadFacts();
   const upstreamMessages = facts ? [{ role: 'system', content: facts }, ...messages] : messages;
@@ -187,6 +208,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         messages: upstreamMessages,
         stream: true,
         include_reasoning: true,
+        ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
       }),
     });
 

@@ -47,6 +47,18 @@ the file itself, since the whole file is sent to the model verbatim.
 To use a different file or location, set `FACTS_FILE` in `.env` to a path
 relative to the project root.
 
+## Sidebar settings
+
+Below the chat list, the sidebar has two dropdowns (global settings, not
+tied to any one chat):
+
+- **Response length** — Short (500 tokens), Medium (1000, default), or Long
+  (no cap — bounded only by the model's own limit). Applies to the next
+  message sent, from any chat.
+- **Agent** — no real agents exist yet; this is the wiring (server endpoint,
+  request field, validation) for a feature landing later. Selecting the one
+  placeholder entry has no effect today.
+
 ## How it works
 
 - `public/login.html` — login form, posts to `POST /api/login`.

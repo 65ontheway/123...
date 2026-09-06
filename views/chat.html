@@ -154,6 +154,7 @@
   .thread-item:focus-visible,
   .thread-item-rename:focus-visible,
   .thread-item-delete:focus-visible,
+  .sidebar-setting select:focus-visible,
   #input:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -186,7 +187,7 @@
     padding: 16px 12px;
     border-right: 1px solid var(--border);
     background: var(--panel-bg);
-    overflow-y: auto;
+    overflow: hidden;
   }
   #sidebar-resizer {
     position: relative;
@@ -223,10 +224,47 @@
   }
   #new-chat-btn:hover { border-color: var(--accent); background: var(--bubble-assistant); }
   #thread-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
+  .sidebar-footer {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 4px;
+  }
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 -12px;
+  }
+  .sidebar-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-setting label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sidebar-setting select {
+    font-size: 13px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .sidebar-setting select:hover { border-color: var(--muted); }
   .thread-item {
     display: flex;
     align-items: center;
@@ -428,6 +466,12 @@
     font-style: italic;
   }
   .msg.assistant .thinking-body > *:last-child { margin-bottom: 0; }
+  .msg.assistant .truncated-note {
+    margin-top: 8px;
+    font-size: 0.8em;
+    font-style: italic;
+    color: var(--muted);
+  }
   @keyframes msg-in {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
@@ -528,6 +572,21 @@
     <aside id="sidebar">
       <button id="new-chat-btn">+ New Chat</button>
       <div id="thread-list"></div>
+      <div class="sidebar-footer">
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-setting">
+          <label for="response-length-select">Response length</label>
+          <select id="response-length-select">
+            <option value="short">Short</option>
+            <option value="medium">Medium</option>
+            <option value="long">Long</option>
+          </select>
+        </div>
+        <div class="sidebar-setting">
+          <label for="agent-select">Agent</label>
+          <select id="agent-select"></select>
+        </div>
+      </div>
     </aside>
     <div id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat history"></div>
     <div id="sidebar-backdrop"></div>
@@ -558,6 +617,8 @@
     const sidebarBackdrop = document.getElementById('sidebar-backdrop');
     const newChatBtn = document.getElementById('new-chat-btn');
     const threadListEl = document.getElementById('thread-list');
+    const responseLengthSelect = document.getElementById('response-length-select');
+    const agentSelect = document.getElementById('agent-select');
 
     let history = [];
     let activeController = null;
@@ -862,8 +923,53 @@
         // dropdown just stays empty; chat still works with the server's default model
       }
     }
+
+    async function loadAgents() {
+      try {
+        const res = await fetch('/api/agents');
+        if (res.status === 401) {
+          window.location.href = '/';
+          return;
+        }
+        const data = await res.json();
+        if (!data.ok) return;
+        agentSelect.innerHTML = '';
+        for (const a of data.agents) {
+          const opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = a.label;
+          agentSelect.appendChild(opt);
+        }
+        const saved = localStorage.getItem('raygpt.agent');
+        agentSelect.value = saved && [...agentSelect.options].some((o) => o.value === saved) ? saved : data.default;
+      } catch (err) {
+        // dropdown just stays empty; chat still works without an agent selected
+      }
+    }
+
+    // Response length and agent are global settings (not tied to any one
+    // chat), unlike the model picker which is remembered per-thread.
+    const savedResponseLength = localStorage.getItem('raygpt.responseLength');
+    responseLengthSelect.value = ['short', 'medium', 'long'].includes(savedResponseLength)
+      ? savedResponseLength
+      : 'medium';
+    responseLengthSelect.addEventListener('change', () => {
+      try {
+        localStorage.setItem('raygpt.responseLength', responseLengthSelect.value);
+      } catch {
+        // localStorage unavailable — setting just won't persist across reloads
+      }
+    });
+    agentSelect.addEventListener('change', () => {
+      try {
+        localStorage.setItem('raygpt.agent', agentSelect.value);
+      } catch {
+        // localStorage unavailable — setting just won't persist across reloads
+      }
+    });
+
     (async () => {
-      await loadModels();
+      await Promise.all([loadModels(), loadAgents()]);
       if (state.threads.length === 0) {
         createThread();
         return;
@@ -958,6 +1064,7 @@
       let assistantText = '';
       let reasoningText = '';
       let structured = false;
+      let finishReason = '';
 
       function ensureAssistantStructure() {
         if (structured) return;
@@ -965,14 +1072,19 @@
         bubble.classList.remove('pending');
         bubble.classList.add('assistant');
         bubble.innerHTML =
-          '<details class="thinking" hidden><summary>Thinking</summary><div class="thinking-body"></div></details><div class="answer"></div>';
+          '<details class="thinking" hidden><summary>Thinking</summary><div class="thinking-body"></div></details><div class="answer"></div><div class="truncated-note" hidden>Response was cut off at the token limit.</div>';
       }
 
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: history, model: modelSelect.value }),
+          body: JSON.stringify({
+            messages: history,
+            model: modelSelect.value,
+            responseLength: responseLengthSelect.value,
+            agent: agentSelect.value,
+          }),
           signal: controller.signal,
         });
 
@@ -1019,6 +1131,9 @@
             }
 
             const delta = json.choices?.[0]?.delta || {};
+            if (json.choices?.[0]?.finish_reason) {
+              finishReason = json.choices[0].finish_reason;
+            }
 
             const reasoningChunk = extractReasoningChunk(delta);
             if (reasoningChunk) {
@@ -1048,6 +1163,10 @@
           bubble.remove();
           addBubble('error', streamError);
         } else {
+          if (finishReason === 'length') {
+            const note = bubble.querySelector('.truncated-note');
+            if (note) note.hidden = false;
+          }
           history.push({ role: 'assistant', content: assistantText });
           touchActiveThread();
         }
