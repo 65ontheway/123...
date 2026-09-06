@@ -47,6 +47,30 @@ the file itself, since the whole file is sent to the model verbatim.
 To use a different file or location, set `FACTS_FILE` in `.env` to a path
 relative to the project root.
 
+## Attachments
+
+The composer has two buttons:
+
+- **🖼️ Image** — some OpenRouter models can see images, others can't. The chat
+  page checks each model's actual capability (via OpenRouter's live catalog,
+  the same data already used to prune dead models from the picker) and only
+  shows this button when the currently selected model supports image input.
+  Switching to a model that doesn't support images clears any image you'd
+  already attached. Attached images are downscaled to at most 1280px on the
+  long edge and re-encoded as JPEG in the browser before sending, to keep
+  requests small.
+- **📎 File** — attach a PDF, Word (`.docx`), or Excel (`.xlsx`/`.xls`) file.
+  Always available, regardless of which model is selected:
+  - PDFs are sent through OpenRouter's own universal PDF parser, which works
+    with any model (not just ones with native file support).
+  - Word and Excel files have no equivalent API format, so their text is
+    extracted right in the browser (via `mammoth` for `.docx`, `exceljs` for
+    spreadsheets) and sent as plain text instead of the original file. Legacy
+    `.doc` isn't supported — convert it to `.docx` first.
+
+Both kinds of attachments persist in thread history, so re-opening an old
+chat shows the same thumbnails/file chips as when they were sent.
+
 ## Sidebar settings
 
 Below the chat list, the sidebar has two dropdowns (global settings, not

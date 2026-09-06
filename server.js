@@ -9,7 +9,10 @@ const session = require('express-session');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+// Default 100kb body limit is too small once messages can carry base64-encoded
+// images and PDFs; images are downscaled client-side first, but a multi-turn
+// thread resends its whole history (including past attachments) on every request.
+app.use(express.json({ limit: '30mb' }));
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'dev-only-secret-change-me',
@@ -26,13 +29,21 @@ app.use(
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve the two browser-ready bundles used to render Markdown in the chat UI
-// directly from node_modules, so the page isn't dependent on a third-party CDN.
+// Serve browser-ready bundles directly from node_modules, so the page isn't
+// dependent on a third-party CDN: marked/DOMPurify render assistant Markdown,
+// mammoth/exceljs extract text from uploaded Word/Excel files client-side so
+// their contents can be attached as plain text without a server round-trip.
 app.get('/vendor/marked.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/marked/lib/marked.umd.js'));
 });
 app.get('/vendor/dompurify.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/dompurify/dist/purify.min.js'));
+});
+app.get('/vendor/mammoth.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/mammoth/mammoth.browser.min.js'));
+});
+app.get('/vendor/exceljs.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/exceljs/dist/exceljs.min.js'));
 });
 
 // Curated high-power open-weight models available through OpenRouter, listed
@@ -71,26 +82,38 @@ const VALID_AGENT_IDS = new Set(AVAILABLE_AGENTS.map((a) => a.id));
 // curated list against OpenRouter's live catalog and quietly drop anything that's
 // disappeared. Cached, and fails open to the full curated list if the catalog
 // fetch doesn't succeed, so a network hiccup never breaks the model picker.
-let modelCatalogCache = { ids: null, fetchedAt: 0 };
+//
+// The same catalog fetch also carries each model's `architecture.input_modalities`
+// (e.g. ["text", "image", "file"]), which is reused to decide whether the chat UI
+// should offer image upload for the selected model — no separate request needed.
+let modelCatalogCache = { models: null, fetchedAt: 0 };
 const MODEL_CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-async function getLiveModelIds() {
+async function getLiveModelCatalog() {
   const now = Date.now();
-  if (modelCatalogCache.ids && now - modelCatalogCache.fetchedAt < MODEL_CATALOG_TTL_MS) {
-    return modelCatalogCache.ids;
+  if (modelCatalogCache.models && now - modelCatalogCache.fetchedAt < MODEL_CATALOG_TTL_MS) {
+    return modelCatalogCache.models;
   }
   try {
     const res = await fetch('https://openrouter.ai/api/v1/models', {
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) return modelCatalogCache.ids;
+    if (!res.ok) return modelCatalogCache.models;
     const data = await res.json();
-    if (!Array.isArray(data?.data)) return modelCatalogCache.ids;
-    const ids = new Set(data.data.map((m) => m.id));
-    modelCatalogCache = { ids, fetchedAt: now };
-    return ids;
+    if (!Array.isArray(data?.data)) return modelCatalogCache.models;
+    const models = new Map(
+      data.data.map((m) => {
+        // Prefer the documented `architecture.input_modalities` path, but fall
+        // back to a top-level field in case OpenRouter ever flattens the shape.
+        const inputModalities = m.architecture?.input_modalities || m.input_modalities || [];
+        const supportsImages = Array.isArray(inputModalities) && inputModalities.includes('image');
+        return [m.id, { supportsImages }];
+      })
+    );
+    modelCatalogCache = { models, fetchedAt: now };
+    return models;
   } catch {
-    return modelCatalogCache.ids;
+    return modelCatalogCache.models;
   }
 }
 
@@ -162,13 +185,22 @@ app.get('/chat', (req, res) => {
 });
 
 app.get('/api/models', requireAuth, async (req, res) => {
-  const liveIds = await getLiveModelIds();
-  const curated = liveIds ? AVAILABLE_MODELS.filter((m) => liveIds.has(m.id)) : AVAILABLE_MODELS;
+  const liveCatalog = await getLiveModelCatalog();
+  const curated = liveCatalog
+    ? AVAILABLE_MODELS.filter((m) => liveCatalog.has(m.id))
+    : AVAILABLE_MODELS;
 
   const models = curated.some((m) => m.id === DEFAULT_MODEL)
     ? curated
     : [{ id: DEFAULT_MODEL, label: `${DEFAULT_MODEL} (from .env)` }, ...curated];
-  res.json({ ok: true, models, default: DEFAULT_MODEL });
+
+  // If the catalog fetch never succeeded, we have no capability data — default
+  // to false (hide the upload button) rather than guess a model can take images.
+  const withCapabilities = models.map((m) => ({
+    ...m,
+    supportsImages: liveCatalog?.get(m.id)?.supportsImages === true,
+  }));
+  res.json({ ok: true, models: withCapabilities, default: DEFAULT_MODEL });
 });
 
 app.get('/api/agents', requireAuth, (req, res) => {
