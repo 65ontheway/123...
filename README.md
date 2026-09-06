@@ -84,9 +84,67 @@ tied to any one chat):
 - **Response length** — Short (500 tokens), Medium (1000, default), or Long
   (no cap — bounded only by the model's own limit). Applies to the next
   message sent, from any chat.
-- **Agent** — no real agents exist yet; this is the wiring (server endpoint,
-  request field, validation) for a feature landing later. Selecting the one
-  placeholder entry has no effect today.
+- **Agent** — **General Assistant** is the plain chat flow. **Soccer Lineup**
+  is a real tool-calling agent — see below.
+
+## Soccer Lineup agent
+
+Select **Soccer Lineup** from the Agent dropdown and describe what you want
+in plain English — e.g. "Rest Emma the first half, put Sarah at forward in
+the third quarter." The model doesn't schedule the game itself: it only
+turns your request into structured, per-quarter constraints (formation,
+who's resting each quarter, who's pinned to a position each quarter), and
+the app schedules all 4 quarters deterministically. That split exists
+because an LLM asked to fill 7 slots x 4 quarters — while also enforcing
+AYSO's fairness rule below — will drift on that bookkeeping as the roster
+grows; the actual scheduling is plain code, not a guess.
+
+**AYSO fairness rule, enforced by code, not the model:** every player plays
+3 quarters before anyone plays a 4th. Each quarter's open slots are filled
+by whoever has played the fewest quarters so far (skill rating is only the
+tiebreaker), which naturally produces this distribution. If an explicit
+request you make (e.g. pinning the same player to a position across
+multiple quarters) would force someone into a 4th quarter early, the
+response says so explicitly rather than silently violating the rule or
+silently overriding your request.
+
+### Managing the roster from chat
+
+You don't need to hand-edit a file to get started or to keep the roster up
+to date — just tell the agent in plain English, e.g. "add Sarah, she's a 4
+offense, 2 defense, 1 goalie", "bump Emma's defense to a 4", or "remove
+Jenny, she moved away." As with scheduling, the model only extracts what
+changed; the app applies the add/update/remove to the roster file itself,
+so a rating never gets silently mis-typed by the model. Ratings you don't
+mention default to **3** on a new player. A brand-new account has no
+roster file yet — asking the agent to add players creates one
+automatically, so there's no setup step required before your first
+message.
+
+You can still hand-edit the file directly if you prefer:
+
+```bash
+mkdir -p data/rosters
+cp roster.json.example data/rosters/<your-login-username>.json
+```
+
+The filename must match the username you log in with (e.g. `admin.json` if
+`APP_USERNAME=admin`) — rosters are isolated per account so player data is
+never shared between logins, even though today there's only the one
+account. Edit it with your real roster — a `formation` (see the four
+supported below) and a `players` array, each with a `name` and a `skills`
+object rating them **1-5** on `offense`, `defense`, and `goalie`. A
+midfielder's fit for a slot is scored as the average of `offense` and
+`defense`, since that position plays both ways. Like `facts.md`, everything
+under `data/rosters/` is git-ignored (it's real kids' names and stats) and
+re-read automatically when it changes — no restart needed.
+
+Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. Set
+one as your roster file's default or name one per request ("set the lineup
+in a 3-2-1"). If a request can't be fully satisfied (an unrecognized name,
+two players pinned to the same slot in the same quarter, more players
+resting than the roster can cover), the response explains what happened
+instead of silently guessing.
 
 ## Auto-generated chat titles
 
@@ -122,3 +180,8 @@ title just stays as-is rather than retrying on every later message.
   Like everything else in `public/`, all of these are served unauthenticated
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
+- `lib/soccerLineup.js` — the Soccer Lineup agent's domain logic (reading
+  and writing the per-account roster file, the `set_game_lineup` and
+  `manage_roster` tool definitions, the deterministic 4-quarter scheduling
+  algorithm, and roster add/update/remove logic), kept out of `server.js`
+  as its own module.

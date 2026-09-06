@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const session = require('express-session');
+const soccerLineup = require('./lib/soccerLineup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -70,11 +71,14 @@ const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_M
 const RESPONSE_LENGTH_TOKENS = { short: 500, medium: 1000, long: null };
 const DEFAULT_RESPONSE_LENGTH = 'medium';
 
-// No real agents yet — this is the plumbing (endpoint, validation, request
-// wiring) for a feature landing later. The single placeholder entry is a
-// no-op today; POST /api/chat already accepts and validates an `agent` field
-// so nothing else needs to change when real agents are added.
-const AVAILABLE_AGENTS = [{ id: 'default', label: 'General Assistant' }];
+// General Assistant is the plain passthrough chat flow. Soccer Lineup is a
+// real tool-calling agent (see lib/soccerLineup.js and the branch in
+// POST /api/chat below) — the model only extracts constraints from the
+// coach's request; the actual lineup is computed deterministically in JS.
+const AVAILABLE_AGENTS = [
+  { id: 'default', label: 'General Assistant' },
+  { id: soccerLineup.AGENT_ID, label: soccerLineup.AGENT_LABEL },
+];
 const VALID_AGENT_IDS = new Set(AVAILABLE_AGENTS.map((a) => a.id));
 
 // Used only for the one-off "generate a short title for this chat" call, never
@@ -276,13 +280,143 @@ app.post('/api/generate-title', requireAuth, async (req, res) => {
   }
 });
 
+// Streams an upstream OpenRouter response body straight through to the
+// client unchanged — the same raw-SSE passthrough used by the plain chat
+// flow and, as its second call, by the Soccer Lineup agent.
+async function pipeUpstreamStream(upstream, res) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    res.write(decoder.decode(value, { stream: true }));
+  }
+  res.end();
+}
+
+// The Soccer Lineup agent is a two-call tool-calling flow rather than a
+// single passthrough. First, a forced (tool_choice: 'required', not a
+// specific one — the model picks between the two tools below), non-
+// streaming call turns the coach's message into a structured request:
+//   - set_game_lineup: per-quarter formation/resting/pinned constraints —
+//     the app schedules the actual 4-quarter game in plain JS (see
+//     lib/soccerLineup.js — an LLM enforcing AYSO's "3 quarters before a
+//     4th" rule by itself will drift on that bookkeeping as the roster
+//     grows).
+//   - manage_roster: add/update/remove players — the app applies that as a
+//     real, targeted file edit, never as model-generated file content (one
+//     slip in a freehanded rewrite could corrupt other players' data).
+// Then a second, streamed call asks the model to explain whatever happened
+// in natural language, which streams back to the client exactly like the
+// plain chat flow.
+async function handleSoccerLineupChat(res, { upstreamMessages, selectedModel, maxTokens, apiKey, username }) {
+  const existingRoster = soccerLineup.loadRoster(username);
+  const rosterDescription = existingRoster ? soccerLineup.describeRoster(existingRoster) : '(no roster file yet)';
+
+  const systemMessage = {
+    role: 'system',
+    content:
+      'You are a soccer lineup assistant for a 7v7 team playing a standard 4-quarter AYSO game. ' +
+      `Today's roster:\n${rosterDescription}\n\n` +
+      'You have two tools and must always call exactly one, based on what the coach is asking for:\n' +
+      '- manage_roster: the coach wants to add, update, or remove players (e.g. "add Sarah, she\'s a 4 offense 2 defense 1 goalie", "remove Jenny", "bump Emma\'s defense to a 4").\n' +
+      '- set_game_lineup: the coach wants a lineup/schedule set for a game, with resting/pinned constraints keyed by quarter ("1"-"4").\n' +
+      'You never edit the roster or compute a schedule yourself — the app does that from your tool call. ' +
+      'After you receive the result, explain it clearly and warmly: for a roster change, confirm what changed; ' +
+      'for a lineup, list each quarter, the bench, quarters played per player, and any warnings in plain language.',
+  };
+  const baseHeaders = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': process.env.APP_URL || `http://localhost:${PORT}`,
+    'X-Title': 'Simple LLM Chat',
+  };
+
+  const toolCallRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: baseHeaders,
+    body: JSON.stringify({
+      model: selectedModel,
+      messages: [systemMessage, ...upstreamMessages],
+      tools: [soccerLineup.SET_GAME_LINEUP_TOOL, soccerLineup.MANAGE_ROSTER_TOOL],
+      tool_choice: 'required',
+      stream: false,
+    }),
+  });
+  if (!toolCallRes.ok) {
+    const data = await toolCallRes.json().catch(() => ({}));
+    return res
+      .status(toolCallRes.status)
+      .json({ ok: false, error: data?.error?.message || 'OpenRouter request failed' });
+  }
+  const toolCallData = await toolCallRes.json();
+  const assistantMessage = toolCallData?.choices?.[0]?.message;
+  const toolCall = assistantMessage?.tool_calls?.[0];
+  if (!toolCall) {
+    return res.status(502).json({ ok: false, error: 'Model did not return an action — try rephrasing.' });
+  }
+
+  let args;
+  try {
+    args = JSON.parse(toolCall.function.arguments);
+  } catch {
+    return res.status(502).json({ ok: false, error: 'Model returned an invalid request.' });
+  }
+
+  let toolResultContent;
+  if (toolCall.function.name === 'manage_roster') {
+    // Lazily creates the roster file on first use — a new account has no
+    // pre-made roster to set up; asking the agent to add a player is what
+    // creates one.
+    const roster = existingRoster || { formation: soccerLineup.DEFAULT_FORMATION, players: [] };
+    const messages = soccerLineup.applyRosterEdits(roster, args);
+    soccerLineup.saveRoster(username, roster);
+    toolResultContent = soccerLineup.formatRosterEditResult(messages);
+  } else {
+    if (!existingRoster) {
+      toolResultContent =
+        'There is no roster yet — ask the coach to add some players first (e.g. "add Sarah, Emma, and Jenny to the team").';
+    } else {
+      const result = soccerLineup.computeGameLineup(existingRoster, args);
+      toolResultContent = soccerLineup.formatGameLineupResult(result);
+    }
+  }
+
+  const explainRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: baseHeaders,
+    body: JSON.stringify({
+      model: selectedModel,
+      messages: [
+        systemMessage,
+        ...upstreamMessages,
+        assistantMessage,
+        { role: 'tool', tool_call_id: toolCall.id, content: toolResultContent },
+      ],
+      stream: true,
+      include_reasoning: true,
+      ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
+    }),
+  });
+  if (!explainRes.ok) {
+    const data = await explainRes.json().catch(() => ({}));
+    return res
+      .status(explainRes.status)
+      .json({ ok: false, error: data?.error?.message || 'OpenRouter request failed' });
+  }
+  return pipeUpstreamStream(explainRes, res);
+}
+
 app.post('/api/chat', requireAuth, async (req, res) => {
   const { messages, model, responseLength, agent } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ ok: false, error: 'messages array is required' });
   }
   const selectedModel = VALID_MODEL_IDS.has(model) ? model : DEFAULT_MODEL;
-  const selectedAgent = VALID_AGENT_IDS.has(agent) ? agent : AVAILABLE_AGENTS[0].id; // no-op today
+  const selectedAgent = VALID_AGENT_IDS.has(agent) ? agent : AVAILABLE_AGENTS[0].id;
   const maxTokens = Object.prototype.hasOwnProperty.call(RESPONSE_LENGTH_TOKENS, responseLength)
     ? RESPONSE_LENGTH_TOKENS[responseLength]
     : RESPONSE_LENGTH_TOKENS[DEFAULT_RESPONSE_LENGTH];
@@ -293,6 +427,23 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: 'Server is missing OPENROUTER_API_KEY' });
+  }
+
+  if (selectedAgent === soccerLineup.AGENT_ID) {
+    try {
+      return await handleSoccerLineupChat(res, {
+        upstreamMessages,
+        selectedModel,
+        maxTokens,
+        apiKey,
+        username: req.session.username,
+      });
+    } catch (err) {
+      if (!res.headersSent) {
+        return res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });
+      }
+      return res.end();
+    }
   }
 
   try {
@@ -320,18 +471,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         .json({ ok: false, error: data?.error?.message || 'OpenRouter request failed' });
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(decoder.decode(value, { stream: true }));
-    }
-    res.end();
+    await pipeUpstreamStream(upstream, res);
   } catch (err) {
     if (!res.headersSent) {
       res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });

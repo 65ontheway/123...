@@ -1,0 +1,13 @@
+{
+  "formation": "2-3-1",
+  "players": [
+    { "name": "Player One", "skills": { "offense": 2, "defense": 3, "goalie": 5 } },
+    { "name": "Player Two", "skills": { "offense": 3, "defense": 5, "goalie": 2 } },
+    { "name": "Player Three", "skills": { "offense": 3, "defense": 4, "goalie": 2 } },
+    { "name": "Player Four", "skills": { "offense": 4, "defense": 3, "goalie": 2 } },
+    { "name": "Player Five", "skills": { "offense": 4, "defense": 2, "goalie": 1 } },
+    { "name": "Player Six", "skills": { "offense": 3, "defense": 4, "goalie": 2 } },
+    { "name": "Player Seven", "skills": { "offense": 5, "defense": 2, "goalie": 1 } },
+    { "name": "Player Eight", "skills": { "offense": 3, "defense": 3, "goalie": 3 } }
+  ]
+}
