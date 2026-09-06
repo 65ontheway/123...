@@ -88,7 +88,8 @@
     margin-bottom: -8px;
   }
   input {
-    font-size: 15px;
+    /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
+    font-size: 16px;
     padding: 11px 12px;
     border-radius: 9px;
     border: 1px solid var(--border);

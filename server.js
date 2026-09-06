@@ -77,6 +77,12 @@ const DEFAULT_RESPONSE_LENGTH = 'medium';
 const AVAILABLE_AGENTS = [{ id: 'default', label: 'General Assistant' }];
 const VALID_AGENT_IDS = new Set(AVAILABLE_AGENTS.map((a) => a.id));
 
+// Used only for the one-off "generate a short title for this chat" call, never
+// exposed as a user-selectable option. Reuses the cheapest model already in
+// AVAILABLE_MODELS (verified to exist on OpenRouter) rather than a separate,
+// unverified slug — titling a couple hundred tokens on it is effectively free.
+const TITLE_MODEL = 'deepseek/deepseek-v3.2';
+
 // OpenRouter periodically deprecates/removes models. Rather than let a dead entry
 // sit in the dropdown until someone hits "No endpoints found", cross-check the
 // curated list against OpenRouter's live catalog and quietly drop anything that's
@@ -205,6 +211,69 @@ app.get('/api/models', requireAuth, async (req, res) => {
 
 app.get('/api/agents', requireAuth, (req, res) => {
   res.json({ ok: true, agents: AVAILABLE_AGENTS, default: AVAILABLE_AGENTS[0].id });
+});
+
+// Generates a short sidebar title from a chat's first exchange, once, instead
+// of the sidebar just showing the truncated first message forever. Takes
+// plain-text summaries of the two messages rather than the raw (possibly
+// attachment-laden) message objects, since a title has no need to re-upload
+// an image or a PDF just to name the conversation.
+app.post('/api/generate-title', requireAuth, async (req, res) => {
+  const { userMessage, assistantMessage } = req.body || {};
+  if (typeof userMessage !== 'string' || typeof assistantMessage !== 'string') {
+    return res.status(400).json({ ok: false, error: 'userMessage and assistantMessage are required' });
+  }
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ ok: false, error: 'Server is missing OPENROUTER_API_KEY' });
+  }
+
+  try {
+    const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.APP_URL || `http://localhost:${PORT}`,
+        'X-Title': 'Simple LLM Chat',
+      },
+      body: JSON.stringify({
+        model: TITLE_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Generate a short title (3-6 words) that summarizes this chat. ' +
+              'Reply with only the title itself — no quotes, no punctuation at the end, no explanation.',
+          },
+          {
+            role: 'user',
+            content: `User: ${userMessage.slice(0, 500) || '(sent an attachment)'}\nAssistant: ${assistantMessage.slice(0, 500)}`,
+          },
+        ],
+        max_tokens: 20,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ ok: false, error: 'Title generation failed' });
+    }
+
+    const data = await upstream.json();
+    let title = data?.choices?.[0]?.message?.content?.trim() || '';
+    title = title.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').replace(/[.!?]+$/, '');
+    if (title.length > 80) title = title.slice(0, 80);
+    if (!title) {
+      return res.status(502).json({ ok: false, error: 'Title generation returned nothing' });
+    }
+
+    res.json({ ok: true, title });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });
+  }
 });
 
 app.post('/api/chat', requireAuth, async (req, res) => {

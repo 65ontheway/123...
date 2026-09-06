@@ -49,17 +49,16 @@ relative to the project root.
 
 ## Attachments
 
-The composer has two buttons:
+The composer has a single 📎 attach button that opens a small menu:
 
-- **📷 Image** — some OpenRouter models can see images, others can't. The chat
-  page checks each model's actual capability (via OpenRouter's live catalog,
-  the same data already used to prune dead models from the picker) and only
-  shows this button when the currently selected model supports image input.
-  Switching to a model that doesn't support images clears any image you'd
-  already attached. Attached images are downscaled to at most 1280px on the
-  long edge and re-encoded as JPEG in the browser before sending, to keep
+- **Upload image / take photo** — only shown when the currently selected
+  model can actually see images (checked via OpenRouter's live catalog, the
+  same data already used to prune dead models from the picker). Switching to
+  a model that doesn't support images clears any image you'd already
+  attached. Attached images are downscaled to at most 1280px on the long
+  edge and re-encoded as JPEG in the browser before sending, to keep
   requests small.
-- **📎 File** — attach a PDF, Word (`.docx`), or Excel (`.xlsx`/`.xls`) file.
+- **Upload file** — a PDF, Word (`.docx`), or Excel (`.xlsx`/`.xls`) file.
   Always available, regardless of which model is selected:
   - PDFs are sent through OpenRouter's own universal PDF parser, which works
     with any model (not just ones with native file support).
@@ -71,11 +70,11 @@ The composer has two buttons:
 Both kinds of attachments persist in thread history, so re-opening an old
 chat shows the same thumbnails/file chips as when they were sent.
 
-You can also skip both buttons and just paste (Cmd/Ctrl+V) directly into the
-message box — a screenshot, a copied image, or a file copied from Finder/
-Explorer. It's routed through the exact same logic as the buttons, so the
-same rules apply (an image is silently ignored if the selected model can't
-see images; a PDF/Word/Excel file works regardless of model).
+You can also skip the menu entirely and just paste (Cmd/Ctrl+V) directly
+into the message box — a screenshot, a copied image, or a file copied from
+Finder/Explorer. It's routed through the exact same logic as the menu, so
+the same rules apply (an image is silently ignored if the selected model
+can't see images; a PDF/Word/Excel file works regardless of model).
 
 ## Sidebar settings
 
@@ -88,6 +87,14 @@ tied to any one chat):
 - **Agent** — no real agents exist yet; this is the wiring (server endpoint,
   request field, validation) for a feature landing later. Selecting the one
   placeholder entry has no effect today.
+
+## Auto-generated chat titles
+
+New chats are titled from the truncated first message at first, but once the
+first exchange finishes, the server asks a cheap/fast model
+(`deepseek/deepseek-v3.2`) for a real 3-6 word title and swaps it in. This
+happens once per chat — if it fails (network issue, etc.) the truncated
+title just stays as-is rather than retrying on every later message.
 
 ## How it works
 
