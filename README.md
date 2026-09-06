@@ -108,7 +108,20 @@ multiple quarters) would force someone into a 4th quarter early, the
 response says so explicitly rather than silently violating the rule or
 silently overriding your request.
 
-Setup:
+### Managing the roster from chat
+
+You don't need to hand-edit a file to get started or to keep the roster up
+to date — just tell the agent in plain English, e.g. "add Sarah, she's a 4
+offense, 2 defense, 1 goalie", "bump Emma's defense to a 4", or "remove
+Jenny, she moved away." As with scheduling, the model only extracts what
+changed; the app applies the add/update/remove to the roster file itself,
+so a rating never gets silently mis-typed by the model. Ratings you don't
+mention default to **3** on a new player. A brand-new account has no
+roster file yet — asking the agent to add players creates one
+automatically, so there's no setup step required before your first
+message.
+
+You can still hand-edit the file directly if you prefer:
 
 ```bash
 mkdir -p data/rosters
@@ -168,6 +181,7 @@ title just stays as-is rather than retrying on every later message.
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
 - `lib/soccerLineup.js` — the Soccer Lineup agent's domain logic (reading
-  the per-account roster file, the `set_game_lineup` tool definition, and
-  the deterministic 4-quarter scheduling algorithm), kept out of `server.js`
+  and writing the per-account roster file, the `set_game_lineup` and
+  `manage_roster` tool definitions, the deterministic 4-quarter scheduling
+  algorithm, and roster add/update/remove logic), kept out of `server.js`
   as its own module.
