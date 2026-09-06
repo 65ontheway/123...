@@ -17,6 +17,7 @@ Edit `.env`:
 
 - `OPENROUTER_API_KEY` — your key from https://openrouter.ai/keys
 - `OPENROUTER_MODEL` — any OpenRouter model slug (defaults to `qwen/qwen3.8-27b`, labeled "Qwen3.8 27B (Default)" in the picker); this is just the server's default — the chat page also has a model picker
+- `MAX_RESPONSE_TOKENS` — caps how long a single reply can be (defaults to 1024). If a reply hits this limit, the chat UI shows a small note that it was cut off
 - `APP_USERNAME` / `APP_PASSWORD` — the login credentials
 - `SESSION_SECRET` — any long random string
 - `PORT` — defaults to 3000

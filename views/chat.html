@@ -428,6 +428,12 @@
     font-style: italic;
   }
   .msg.assistant .thinking-body > *:last-child { margin-bottom: 0; }
+  .msg.assistant .truncated-note {
+    margin-top: 8px;
+    font-size: 0.8em;
+    font-style: italic;
+    color: var(--muted);
+  }
   @keyframes msg-in {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
@@ -958,6 +964,7 @@
       let assistantText = '';
       let reasoningText = '';
       let structured = false;
+      let finishReason = '';
 
       function ensureAssistantStructure() {
         if (structured) return;
@@ -965,7 +972,7 @@
         bubble.classList.remove('pending');
         bubble.classList.add('assistant');
         bubble.innerHTML =
-          '<details class="thinking" hidden><summary>Thinking</summary><div class="thinking-body"></div></details><div class="answer"></div>';
+          '<details class="thinking" hidden><summary>Thinking</summary><div class="thinking-body"></div></details><div class="answer"></div><div class="truncated-note" hidden>Response was cut off at the token limit.</div>';
       }
 
       try {
@@ -1019,6 +1026,9 @@
             }
 
             const delta = json.choices?.[0]?.delta || {};
+            if (json.choices?.[0]?.finish_reason) {
+              finishReason = json.choices[0].finish_reason;
+            }
 
             const reasoningChunk = extractReasoningChunk(delta);
             if (reasoningChunk) {
@@ -1048,6 +1058,10 @@
           bubble.remove();
           addBubble('error', streamError);
         } else {
+          if (finishReason === 'length') {
+            const note = bubble.querySelector('.truncated-note');
+            if (note) note.hidden = false;
+          }
           history.push({ role: 'assistant', content: assistantText });
           touchActiveThread();
         }

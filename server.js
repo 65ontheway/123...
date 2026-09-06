@@ -51,6 +51,7 @@ const AVAILABLE_MODELS = [
   { id: 'moonshotai/kimi-k3', label: 'Kimi K3' },
 ];
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3.8-27b';
+const MAX_RESPONSE_TOKENS = Number(process.env.MAX_RESPONSE_TOKENS) || 1024;
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
 
 // OpenRouter periodically deprecates/removes models. Rather than let a dead entry
@@ -187,6 +188,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         messages: upstreamMessages,
         stream: true,
         include_reasoning: true,
+        max_tokens: MAX_RESPONSE_TOKENS,
       }),
     });
 
