@@ -17,7 +17,6 @@ Edit `.env`:
 
 - `OPENROUTER_API_KEY` — your key from https://openrouter.ai/keys
 - `OPENROUTER_MODEL` — any OpenRouter model slug (defaults to `qwen/qwen3.8-27b`, labeled "Qwen3.8 27B (Default)" in the picker); this is just the server's default — the chat page also has a model picker
-- `MAX_RESPONSE_TOKENS` — caps how long a single reply can be (defaults to 1024). If a reply hits this limit, the chat UI shows a small note that it was cut off
 - `APP_USERNAME` / `APP_PASSWORD` — the login credentials
 - `SESSION_SECRET` — any long random string
 - `PORT` — defaults to 3000
@@ -47,6 +46,18 @@ the file itself, since the whole file is sent to the model verbatim.
 
 To use a different file or location, set `FACTS_FILE` in `.env` to a path
 relative to the project root.
+
+## Sidebar settings
+
+Below the chat list, the sidebar has two dropdowns (global settings, not
+tied to any one chat):
+
+- **Response length** — Short (500 tokens), Medium (1000, default), or Long
+  (no cap — bounded only by the model's own limit). Applies to the next
+  message sent, from any chat.
+- **Agent** — no real agents exist yet; this is the wiring (server endpoint,
+  request field, validation) for a feature landing later. Selecting the one
+  placeholder entry has no effect today.
 
 ## How it works
 
