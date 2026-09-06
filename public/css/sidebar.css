@@ -1,0 +1,189 @@
+/* Left sidebar: new-chat button, thread list (+ inline rename/delete), the
+   response-length/agent settings footer, the drag-to-resize handle, and the
+   mobile slide-over drawer + backdrop. */
+
+.app-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+#sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--border);
+  background: var(--panel-bg);
+  overflow: hidden;
+}
+#sidebar-resizer {
+  position: relative;
+  width: 2px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+#sidebar-resizer::before {
+  /* Invisible wider hit area so a thin, unobtrusive line stays easy to grab */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+#sidebar-resizer:hover,
+#sidebar-resizer.dragging {
+  background: var(--accent);
+}
+#new-chat-btn {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+#new-chat-btn:hover { border-color: var(--accent); background: var(--bubble-assistant); }
+#thread-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 -12px;
+}
+.sidebar-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sidebar-setting label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sidebar-setting select {
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.sidebar-setting select:hover { border-color: var(--muted); }
+.thread-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.thread-item:hover { background: var(--bubble-assistant); }
+.thread-item.active { background: var(--bubble-assistant); border-color: var(--accent); font-weight: 600; }
+.thread-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thread-item-rename,
+.thread-item-delete {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.thread-item:hover .thread-item-rename,
+.thread-item:hover .thread-item-delete { opacity: 1; }
+.thread-item-rename:hover { color: var(--text); }
+.thread-item-delete:hover { color: var(--error); }
+.thread-item-title-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: var(--panel-bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  outline: none;
+}
+#sidebar-backdrop { display: none; }
+
+@media (max-width: 768px) {
+  #sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-md);
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar { max-width: 85vw; }
+  #sidebar-resizer { display: none; }
+  #sidebar-backdrop {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 15;
+  }
+  #sidebar-backdrop.open { display: block; }
+
+  /* Touch targets: bump everything interactive to the standard 44x44px
+     minimum, even where desktop's mouse-oriented density is smaller. */
+  #new-chat-btn,
+  .sidebar-setting select {
+    min-height: 44px;
+  }
+  .thread-item { min-height: 44px; }
+  .thread-item-rename,
+  .thread-item-delete {
+    /* :hover doesn't exist on touch, so icons that only appeared on hover
+       were previously unreachable on a phone — keep them shown here. */
+    opacity: 1;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+  /* >=16px on every text input keeps iOS Safari from auto-zooming on focus. */
+  .thread-item-title-input { font-size: 16px; }
+}
