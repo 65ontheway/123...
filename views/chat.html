@@ -504,9 +504,71 @@
 
   form#composer {
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    gap: 8px;
     padding: 16px 0 24px;
     border-top: 1px solid var(--border);
+  }
+  .composer-row {
+    display: flex;
+    gap: 10px;
+  }
+  #image-previews {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .image-preview {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .image-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .image-preview-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    line-height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #image-btn {
+    flex: 0 0 auto;
+    width: 44px;
+    font-size: 17px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  #image-btn:hover:not(:disabled) { background: var(--bubble-assistant); }
+  #image-btn:active:not(:disabled) { transform: scale(0.97); }
+  #image-btn:disabled { opacity: 0.5; cursor: default; }
+  .msg .msg-text { white-space: pre-wrap; }
+  .msg .msg-image {
+    display: block;
+    max-width: 220px;
+    max-height: 220px;
+    border-radius: 10px;
+    margin-bottom: 6px;
   }
   #input {
     flex: 1;
@@ -595,8 +657,13 @@
       <div id="chat-container">
         <div id="messages"></div>
         <form id="composer">
-          <textarea id="input" rows="1" placeholder="Type a message..." required></textarea>
-          <button type="submit" id="send-btn">Send</button>
+          <div id="image-previews" hidden></div>
+          <div class="composer-row">
+            <input type="file" id="image-input" accept="image/*" multiple hidden />
+            <button type="button" id="image-btn" aria-label="Attach image" hidden>📎</button>
+            <textarea id="input" rows="1" placeholder="Type a message..."></textarea>
+            <button type="submit" id="send-btn">Send</button>
+          </div>
         </form>
       </div>
     </main>
@@ -619,9 +686,27 @@
     const threadListEl = document.getElementById('thread-list');
     const responseLengthSelect = document.getElementById('response-length-select');
     const agentSelect = document.getElementById('agent-select');
+    const imageBtn = document.getElementById('image-btn');
+    const imageInput = document.getElementById('image-input');
+    const imagePreviewsEl = document.getElementById('image-previews');
 
     let history = [];
     let activeController = null;
+
+    // Which models can accept images, keyed by model id — filled in from
+    // /api/models (which derives it from OpenRouter's live catalog). The
+    // upload button is shown/hidden based on this rather than a hardcoded list.
+    let modelCapabilities = new Map();
+    let stagedImages = []; // [{ id, dataUrl }], cleared on send or on switching to a non-image model
+
+    function updateImageButtonVisibility() {
+      const supportsImages = modelCapabilities.get(modelSelect.value) === true;
+      imageBtn.hidden = !supportsImages;
+      if (!supportsImages && stagedImages.length > 0) {
+        stagedImages = [];
+        renderImagePreviews();
+      }
+    }
 
     // Conversation threads persist in this browser via localStorage (no
     // server-side storage). Each thread keeps its own messages and the model
@@ -767,7 +852,7 @@
         if (m.role === 'assistant') {
           renderAssistantText(bubble, m.content);
         } else {
-          bubble.textContent = m.content;
+          renderUserContent(bubble, m.content);
         }
       }
     }
@@ -776,6 +861,7 @@
       if (thread.model && [...modelSelect.options].some((o) => o.value === thread.model)) {
         modelSelect.value = thread.model;
       }
+      updateImageButtonVisibility();
     }
 
     function switchToThread(id) {
@@ -900,6 +986,7 @@
         thread.model = modelSelect.value;
         saveState();
       }
+      updateImageButtonVisibility();
     });
 
     async function loadModels() {
@@ -912,13 +999,16 @@
         const data = await res.json();
         if (!data.ok) return;
         modelSelect.innerHTML = '';
+        modelCapabilities = new Map();
         for (const m of data.models) {
           const opt = document.createElement('option');
           opt.value = m.id;
           opt.textContent = m.label;
           modelSelect.appendChild(opt);
+          modelCapabilities.set(m.id, m.supportsImages === true);
         }
         modelSelect.value = data.default;
+        updateImageButtonVisibility();
       } catch (err) {
         // dropdown just stays empty; chat still works with the server's default model
       }
@@ -993,6 +1083,109 @@
       return div;
     }
 
+    // A user message's `content` is a plain string for text-only messages, or an
+    // OpenAI/OpenRouter-style array of { type: 'text' | 'image_url', ... } parts
+    // once an image is attached.
+    function renderUserContent(bubble, content) {
+      bubble.textContent = '';
+      if (typeof content === 'string') {
+        bubble.textContent = content;
+        return;
+      }
+      if (!Array.isArray(content)) return;
+      for (const part of content) {
+        if (part.type === 'image_url' && part.image_url?.url) {
+          const img = document.createElement('img');
+          img.className = 'msg-image';
+          img.src = part.image_url.url;
+          bubble.appendChild(img);
+        } else if (part.type === 'text' && part.text) {
+          const textDiv = document.createElement('div');
+          textDiv.className = 'msg-text';
+          textDiv.textContent = part.text;
+          bubble.appendChild(textDiv);
+        }
+      }
+    }
+
+    // Images are downscaled and re-encoded client-side before being sent, so a
+    // photo straight off a phone camera doesn't balloon the request (and the
+    // stored thread history, which resends every past image on every turn).
+    const MAX_IMAGE_DIMENSION = 1280;
+    const IMAGE_JPEG_QUALITY = 0.82;
+
+    function downscaleImage(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          let { width, height } = img;
+          if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+            const scale = MAX_IMAGE_DIMENSION / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY));
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Could not load image'));
+        };
+        img.src = objectUrl;
+      });
+    }
+
+    function renderImagePreviews() {
+      imagePreviewsEl.innerHTML = '';
+      imagePreviewsEl.hidden = stagedImages.length === 0;
+      for (const staged of stagedImages) {
+        const chip = document.createElement('div');
+        chip.className = 'image-preview';
+
+        const thumb = document.createElement('img');
+        thumb.src = staged.dataUrl;
+        chip.appendChild(thumb);
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'image-preview-remove';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remove image');
+        remove.addEventListener('click', () => {
+          stagedImages = stagedImages.filter((i) => i.id !== staged.id);
+          renderImagePreviews();
+        });
+        chip.appendChild(remove);
+
+        imagePreviewsEl.appendChild(chip);
+      }
+    }
+
+    imageBtn.addEventListener('click', () => imageInput.click());
+
+    imageInput.addEventListener('change', async () => {
+      const files = [...imageInput.files];
+      imageInput.value = ''; // allow re-selecting the same file later
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        try {
+          const dataUrl = await downscaleImage(file);
+          stagedImages.push({
+            id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+            dataUrl,
+          });
+        } catch {
+          // skip files that fail to decode rather than blocking the rest
+        }
+      }
+      renderImagePreviews();
+    });
+
     function renderAssistantText(el, text) {
       if (window.marked && window.DOMPurify) {
         el.innerHTML = DOMPurify.sanitize(marked.parse(text));
@@ -1045,21 +1238,35 @@
       if (activeController) return;
 
       const text = input.value.trim();
-      if (!text) return;
+      if (!text && stagedImages.length === 0) return;
 
-      addBubble('user', text);
-      history.push({ role: 'user', content: text });
+      const userContent =
+        stagedImages.length === 0
+          ? text
+          : [
+              { type: 'text', text },
+              ...stagedImages.map((img) => ({ type: 'image_url', image_url: { url: img.dataUrl } })),
+            ];
+
+      const userBubble = addBubble('user', '');
+      renderUserContent(userBubble, userContent);
+      history.push({ role: 'user', content: userContent });
       const activeThread = getActiveThread();
-      if (activeThread && !activeThread.title) activeThread.title = makeThreadTitle(text);
+      if (activeThread && !activeThread.title) {
+        activeThread.title = makeThreadTitle(text) || 'Image';
+      }
       touchActiveThread();
       input.value = '';
       input.style.height = 'auto';
+      stagedImages = [];
+      renderImagePreviews();
 
       const controller = new AbortController();
       activeController = controller;
       sendBtn.textContent = 'Stop';
       sendBtn.classList.add('stop');
       input.disabled = true;
+      imageBtn.disabled = true;
       const bubble = addBubble('pending', 'Thinking...');
       let assistantText = '';
       let reasoningText = '';
@@ -1189,6 +1396,7 @@
         sendBtn.textContent = 'Send';
         sendBtn.classList.remove('stop');
         input.disabled = false;
+        imageBtn.disabled = false;
         input.focus();
       }
     });

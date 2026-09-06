@@ -47,6 +47,19 @@ the file itself, since the whole file is sent to the model verbatim.
 To use a different file or location, set `FACTS_FILE` in `.env` to a path
 relative to the project root.
 
+## Image uploads
+
+Some OpenRouter models can see images, others can't. The chat page checks
+each model's actual capability (via OpenRouter's live catalog, the same data
+already used to prune dead models from the picker) and only shows the 📎
+attach button next to the message box when the currently selected model
+supports image input. Switching to a model that doesn't support images
+clears any image you'd already attached.
+
+Attached images are downscaled to at most 1280px on the long edge and
+re-encoded as JPEG in the browser before sending, to keep requests small —
+this happens automatically, no configuration needed.
+
 ## Sidebar settings
 
 Below the chat list, the sidebar has two dropdowns (global settings, not
