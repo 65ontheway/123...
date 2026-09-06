@@ -1,0 +1,761 @@
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --panel-bg: #ffffff;
+    --header-bg: rgba(255, 255, 255, 0.78);
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --border: #d2d2d7;
+    --accent: #0071e3;
+    --accent-2: #6c5ce7;
+    --accent-hover: #0077ed;
+    --bubble-user: #2f6cad;
+    --bubble-user-text: #ffffff;
+    --bubble-assistant: #eef0f2;
+    --bubble-assistant-text: #1d1d1f;
+    --error: #d70015;
+    --code-bg: rgba(0, 0, 0, 0.06);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --panel-bg: #1c1c1e;
+      --header-bg: rgba(20, 20, 22, 0.7);
+      --text: #f5f5f7;
+      --muted: #98989d;
+      --border: #3a3a3c;
+      --accent: #0a84ff;
+      --accent-2: #9d8cff;
+      --accent-hover: #3699ff;
+      --bubble-user: #3878b8;
+      --bubble-user-text: #ffffff;
+      --bubble-assistant: #2c2c2e;
+      --bubble-assistant-text: #f5f5f7;
+      --error: #ff453a;
+      --code-bg: rgba(255, 255, 255, 0.1);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    height: 100dvh; /* dynamic viewport height: accounts for mobile Safari's collapsing toolbar */
+    margin: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 20px 28px;
+    background: var(--header-bg);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: var(--shadow-sm);
+    z-index: 1;
+  }
+  @media (max-width: 480px) {
+    header { padding: 14px 16px; }
+    .brand-name { font-size: 19px; }
+    #model-select { max-width: 130px; }
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    opacity: 0.7;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+  }
+  .brand-mark {
+    flex-shrink: 0;
+  }
+  .brand-name {
+    font-size: 23px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .brand-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--bubble-assistant);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #model-select {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+    max-width: 200px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  #model-select:hover { border-color: var(--muted); }
+  #logout-btn {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  #logout-btn:hover { border-color: var(--muted); background: var(--bubble-assistant); }
+  #model-select:focus-visible,
+  #logout-btn:focus-visible,
+  #send-btn:focus-visible,
+  #sidebar-toggle:focus-visible,
+  #new-chat-btn:focus-visible,
+  .thread-item:focus-visible,
+  .thread-item-rename:focus-visible,
+  .thread-item-delete:focus-visible,
+  .sidebar-setting select:focus-visible,
+  #attach-btn:focus-visible,
+  .suggestion-card:focus-visible,
+  #input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  #sidebar-toggle {
+    display: none;
+    font-size: 18px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .app-body {
+    position: relative;
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 12px;
+    border-right: 1px solid var(--border);
+    background: var(--panel-bg);
+    overflow: hidden;
+  }
+  #sidebar-resizer {
+    position: relative;
+    width: 2px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.1s ease;
+  }
+  #sidebar-resizer::before {
+    /* Invisible wider hit area so a thin, unobtrusive line stays easy to grab */
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
+  }
+  #sidebar-resizer:hover,
+  #sidebar-resizer.dragging {
+    background: var(--accent);
+  }
+  #new-chat-btn {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  #new-chat-btn:hover { border-color: var(--accent); background: var(--bubble-assistant); }
+  #thread-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sidebar-footer {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 4px;
+  }
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 -12px;
+  }
+  .sidebar-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-setting label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .sidebar-setting select {
+    font-size: 13px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .sidebar-setting select:hover { border-color: var(--muted); }
+  .thread-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .thread-item:hover { background: var(--bubble-assistant); }
+  .thread-item.active { background: var(--bubble-assistant); border-color: var(--accent); font-weight: 600; }
+  .thread-item-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .thread-item-rename,
+  .thread-item-delete {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+  }
+  .thread-item:hover .thread-item-rename,
+  .thread-item:hover .thread-item-delete { opacity: 1; }
+  .thread-item-rename:hover { color: var(--text); }
+  .thread-item-delete:hover { color: var(--error); }
+  .thread-item-title-input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    color: inherit;
+    background: var(--panel-bg);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 1px 5px;
+    outline: none;
+  }
+  #sidebar-backdrop { display: none; }
+
+  @media (max-width: 768px) {
+    #sidebar-toggle { display: inline-block; }
+    #sidebar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 20;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+      box-shadow: var(--shadow-md);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar { max-width: 85vw; }
+    #sidebar-resizer { display: none; }
+    #sidebar-backdrop {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 15;
+    }
+    #sidebar-backdrop.open { display: block; }
+
+    /* Touch targets: bump everything interactive to the standard 44x44px
+       minimum, even where desktop's mouse-oriented density is smaller. */
+    #sidebar-toggle {
+      min-width: 44px;
+      min-height: 44px;
+    }
+    #logout-btn,
+    #new-chat-btn,
+    .sidebar-setting select,
+    #model-select {
+      min-height: 44px;
+    }
+    .thread-item { min-height: 44px; }
+    .thread-item-rename,
+    .thread-item-delete {
+      /* :hover doesn't exist on touch, so icons that only appeared on hover
+         were previously unreachable on a phone — keep them shown here. */
+      opacity: 1;
+      min-width: 44px;
+      min-height: 44px;
+      font-size: 16px;
+    }
+    /* >=16px on every text input keeps iOS Safari from auto-zooming on focus. */
+    .thread-item-title-input { font-size: 16px; }
+  }
+
+  main {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+  }
+  #chat-container {
+    width: 100%;
+    max-width: 1400px;
+    display: flex;
+    flex-direction: column;
+    padding: 0 16px;
+  }
+  @media (min-width: 640px) {
+    #chat-container {
+      width: 66.67vw;
+    }
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+    padding: 28px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #empty-state {
+    margin: auto;
+    max-width: 560px;
+    width: 100%;
+    text-align: center;
+    padding: 0 8px;
+  }
+  #empty-state .empty-state-headline {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  #empty-state .empty-state-subhead {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 24px;
+  }
+  .suggestion-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 480px) {
+    .suggestion-grid { grid-template-columns: 1fr; }
+  }
+  .suggestion-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s ease, transform 0.1s ease, background 0.15s ease;
+  }
+  .suggestion-card:hover,
+  .suggestion-card:focus-visible {
+    border-color: var(--accent);
+    background: var(--bubble-assistant);
+    outline: none;
+  }
+  .suggestion-card:active { transform: scale(0.98); }
+  .suggestion-card .suggestion-icon { font-size: 20px; flex-shrink: 0; }
+  .suggestion-card .suggestion-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .suggestion-card .suggestion-label { font-weight: 600; font-size: 13.5px; }
+  .suggestion-card .suggestion-detail {
+    font-size: 12.5px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .msg {
+    max-width: 75%;
+    padding: 11px 16px;
+    border-radius: 16px;
+    font-size: 15px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    box-shadow: var(--shadow-sm);
+    animation: msg-in 0.18s ease-out;
+  }
+  .msg.user,
+  .msg.pending,
+  .msg.error {
+    white-space: pre-wrap;
+  }
+  .msg.assistant > *:first-child { margin-top: 0; }
+  .msg.assistant > *:last-child { margin-bottom: 0; }
+  .msg.assistant p { margin: 0 0 10px; }
+  .msg.assistant ul,
+  .msg.assistant ol {
+    margin: 0 0 10px;
+    padding-left: 22px;
+  }
+  .msg.assistant li { margin: 2px 0; }
+  .msg.assistant pre {
+    background: var(--code-bg);
+    padding: 10px 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0 0 10px;
+  }
+  .msg.assistant code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  .msg.assistant :not(pre) > code {
+    background: var(--code-bg);
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+  .msg.assistant pre code {
+    background: none;
+    padding: 0;
+  }
+  .msg.assistant a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .msg.assistant blockquote {
+    margin: 0 0 10px;
+    padding-left: 12px;
+    border-left: 3px solid var(--border);
+    opacity: 0.85;
+  }
+  .msg.assistant h1,
+  .msg.assistant h2,
+  .msg.assistant h3 {
+    margin: 14px 0 8px;
+    font-size: 1.1em;
+    font-weight: 700;
+  }
+  .msg.assistant hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 10px 0;
+  }
+  .msg.assistant .thinking {
+    margin-bottom: 10px;
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+  .msg.assistant .thinking summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+  }
+  .msg.assistant .thinking summary::-webkit-details-marker { display: none; }
+  .msg.assistant .thinking summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 4px;
+    transition: transform 0.15s ease;
+  }
+  .msg.assistant .thinking[open] summary::before {
+    transform: rotate(90deg);
+  }
+  .msg.assistant .thinking-body {
+    margin-top: 6px;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+    font-style: italic;
+  }
+  .msg.assistant .thinking-body > *:last-child { margin-bottom: 0; }
+  .msg.assistant .truncated-note {
+    margin-top: 8px;
+    font-size: 0.8em;
+    font-style: italic;
+    color: var(--muted);
+  }
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--bubble-user);
+    color: var(--bubble-user-text);
+    border-bottom-right-radius: 4px;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--bubble-assistant);
+    color: var(--bubble-assistant-text);
+    border-bottom-left-radius: 4px;
+  }
+  .msg.error {
+    align-self: center;
+    background: transparent;
+    color: var(--error);
+    font-size: 13px;
+    box-shadow: none;
+  }
+  .msg.pending {
+    align-self: flex-start;
+    background: var(--bubble-assistant);
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  form#composer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 0 24px;
+    /* iOS home-indicator area: keeps the send button clear of it without
+       adding extra space on devices/browsers that don't need it. */
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+  }
+  .composer-row {
+    display: flex;
+    gap: 10px;
+    /* Buttons stay pinned to the last text line as the textarea grows
+       upward, instead of stretching to match its height (the default
+       align-items: stretch is what caused the attach icon to distort). */
+    align-items: flex-end;
+  }
+  #attachment-previews {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .attachment-chip {
+    position: relative;
+    box-shadow: var(--shadow-sm);
+  }
+  .attachment-chip.image-attachment {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .attachment-chip.image-attachment img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .attachment-chip.file-attachment {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 56px;
+    max-width: 160px;
+    padding: 0 22px 0 10px;
+    border-radius: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .attachment-chip.file-attachment .file-icon { font-size: 18px; flex: 0 0 auto; }
+  .attachment-chip.file-attachment .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .attachment-chip-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    line-height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .attach-wrapper {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  #attach-btn {
+    /* Fixed, non-stretching size regardless of the textarea's height. */
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  #attach-btn:hover:not(:disabled) { background: var(--bubble-assistant); }
+  #attach-btn:active:not(:disabled) { transform: scale(0.97); }
+  #attach-btn:disabled { opacity: 0.5; cursor: default; }
+  #attach-btn[aria-expanded="true"] { border-color: var(--accent); background: var(--bubble-assistant); }
+  .attach-menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 220px;
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    box-shadow: var(--shadow-md);
+    z-index: 10;
+  }
+  .attach-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .attach-menu-item:hover,
+  .attach-menu-item:focus-visible { background: var(--bubble-assistant); outline: none; }
+  .attach-menu-item .menu-icon { font-size: 17px; flex-shrink: 0; }
+  .msg .msg-text { white-space: pre-wrap; }
+  .msg .msg-image {
+    display: block;
+    max-width: 220px;
+    max-height: 220px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
+  .msg .msg-file {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(127, 127, 127, 0.12);
+    margin-bottom: 6px;
+    font-size: 0.92em;
+  }
+  .msg .msg-file .file-icon { font-size: 16px; }
+  #input {
+    flex: 1;
+    resize: none;
+    /* >=16px keeps iOS Safari from auto-zooming the page on focus. */
+    font-size: 16px;
+    font-family: inherit;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text);
+    outline: none;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  #input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  #send-btn {
+    flex-shrink: 0;
+    height: 44px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 0 22px;
+    border-radius: 12px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+  #send-btn:active:not(:disabled) { transform: scale(0.97); }
+  #send-btn:disabled { opacity: 0.5; cursor: default; }
+  #send-btn.stop { background: var(--error); }
+  #send-btn.stop:hover { filter: brightness(1.1); }
