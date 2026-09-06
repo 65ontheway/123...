@@ -103,5 +103,10 @@ title just stays as-is rather than retrying on every later message.
   stores a session cookie, serves `views/chat.html` only to authenticated
   sessions, and proxies `POST /api/chat` to OpenRouter's
   `/chat/completions` endpoint using the server-side API key.
-- `views/chat.html` — chat UI; keeps the running conversation in memory and
-  sends the full message history to `/api/chat` on each turn.
+- `views/chat.html` — chat page markup only. Served exclusively through the
+  authenticated `GET /chat` route.
+- `public/chat.css` / `public/chat.js` — the chat page's styling and client
+  logic (thread state, streaming, attachments, etc.), split out of the HTML
+  file into their own files. Like everything else in `public/`, these are
+  served unauthenticated (there's nothing sensitive in them — the API key
+  never leaves the server), the same way `/vendor/*.js` already are.
