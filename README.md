@@ -94,14 +94,16 @@ tied to any one chat):
 ## Soccer Lineup agent
 
 Select **Soccer Lineup** from the Agent dropdown and describe what you want
-in plain English — e.g. "Rest Emma the first half, put Sarah at forward in
+in plain English — e.g. "Rest Emma the first half, put Sarah at left back in
 the third quarter." The model doesn't schedule the game itself: it only
 turns your request into structured, per-quarter constraints (formation,
-who's resting each quarter, who's pinned to a position each quarter), and
-the app schedules all 4 quarters deterministically. That split exists
-because an LLM asked to fill 7 slots x 4 quarters — while also enforcing
-AYSO's fairness rule below — will drift on that bookkeeping as the roster
-grows; the actual scheduling is plain code, not a guess.
+who's resting each quarter, who's pinned to an exact position or a general
+role each quarter, any left/right side preference for this lineup), and the
+app schedules all 4 quarters deterministically. That split exists because an
+LLM asked to fill 7 slots x 4 quarters — while also enforcing AYSO's
+fairness rule below and left/right side preferences — will drift on that
+bookkeeping as the roster grows; the actual scheduling is plain code, not a
+guess.
 
 **AYSO fairness rule, enforced by code, not the model:** every player plays
 3 quarters before anyone plays a 4th. Each quarter's open slots are filled
@@ -153,11 +155,106 @@ any AI call happens.
 
 Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. Set
 one as your roster's default in the panel, or name one per request ("set
-the lineup in a 3-2-1"). A midfielder's fit for a slot is scored as the
-average of `offense` and `defense`, since that position plays both ways. If
-a request can't be fully satisfied (two players pinned to the same slot in
-the same quarter, more players resting than the roster can cover), the
-response explains what happened instead of silently guessing.
+the lineup in a 3-2-1"). If a request can't be fully satisfied (two players
+pinned to the same slot in the same quarter, more players resting than the
+roster can cover, a position that doesn't exist in the chosen formation),
+the response explains what happened instead of silently guessing or
+substituting something else.
+
+### Exact positions and formations
+
+Each formation is a fixed set of exact, named slots — not just "2 defenders,
+3 midfielders, 1 forward":
+
+| Formation | Slots |
+| --- | --- |
+| `2-3-1` (default) | Goalkeeper; Left Back, Right Back; Left Wing, Center Mid, Right Wing; Striker |
+| `3-2-1` | Goalkeeper; Left Back, Center Back, Right Back; Left Midfield, Right Midfield; Striker |
+| `2-2-2` | Goalkeeper; Left Back, Right Back; Left Midfield, Right Midfield; Left Forward, Right Forward |
+| `3-1-2` | Goalkeeper; Left Back, Center Back, Right Back; Center Mid; Left Forward, Right Forward |
+
+Every slot counts as one of four broad roles for skill scoring, unchanged
+from before exact positions existed: **Goalkeeper** (scored on `goalie`),
+**Defender** (scored on `defense` — includes every back), **Forward**
+(scored on `offense` — includes every forward/striker), and **Midfielder**
+(scored on the average of `offense`/`defense` — includes every wing, since
+a wing plays both ways). A wing is a midfielder with a side; a lone striker
+or center slot has no side at all.
+
+You can pin a player either way, and both are useful:
+
+- **An exact slot** — "put Sarah at left back", "Emma plays center mid in
+  Q3" — assigns that specific spot. Common aliases work too (`goalie`,
+  `keeper`, `center midfield`, `left wing`, etc.).
+- **A general role** — "play Sarah in defense" — reserves that role for her
+  without picking a side; the app picks the exact slot using your side
+  preference (below).
+
+An exact pin always wins a conflict over a general role request, and is
+never moved to satisfy a side preference — if you specifically said "left
+back," that's where they play, full stop. A position that doesn't exist in
+your chosen formation (e.g. "left wing" in a `3-2-1`) is explained back to
+you rather than silently swapped for something else.
+
+### Side preferences
+
+When a role has two mirrored slots (e.g. Left Back/Right Back), you can set
+a default for which side gets the **lower-average player** — average
+meaning `(offense + defense) / 2`, goalie rating never included, since side
+preference only ever applies to outfield roles that come in a left/right
+pair. Defaults:
+
+| Role | Default |
+| --- | --- |
+| Defender | Lower-average defender on the **right** |
+| Midfielder / wing | Lower-average midfielder/wing on the **left** |
+| Forward | No preference |
+
+Set these in the roster panel under **Side preferences** — three plain
+selects (Left / Right / No preference), each labeled neutrally (e.g.
+"Lower-average defender"), auto-saving the moment you change one; the other
+two are never touched. An older roster saved before this setting existed is
+given these defaults automatically the next time it's loaded, without
+touching anything else already in the file.
+
+Side preference never changes **who plays or for how long** — it only
+decides, among two already-selected players in a matching left/right pair,
+which one lands on which side. A center slot (Center Back, Center Mid) is
+never part of a side comparison. An exact pin on either side of a pair takes
+that whole pair out of consideration for the swap; a general role pin can
+still be side-assigned. Equal averages, or no preference for that role,
+leave the pair exactly as the scheduler's normal ordering already placed
+it — no swap at all.
+
+**Temporary vs. saved, from chat:**
+
+- *"For this game, put the weaker defender at left back."* — a **this-lineup-only**
+  override; your saved default is untouched.
+- *"Ignore side preferences for this lineup."* — disables **all** side
+  preferences for this one lineup only.
+- *"Make weaker defenders on the left my new default."* — **persists** just
+  the defender preference; midfielder and forward stay exactly as they were.
+- *"Save these side preferences as my defaults."* — persists whatever was
+  just discussed; if it's not clear which role(s)/side(s) "these" means, the
+  agent asks you to confirm rather than guessing.
+
+An ordinary lineup request never modifies your saved settings — only an
+explicit save/change request does, and a message that does both ("save this
+as my default, and set today's lineup") runs both actions, not just the
+first one. The lineup response always says which preferences actually
+applied and whether each was your saved default or a this-lineup-only
+override, so the explanation matches exactly what was scheduled.
+
+**Priority, when several things could apply to the same slot (highest
+first):** who's available and how many quarters they've already played
+(AYSO fairness, unchanged) → an explicit exact-position or general-role pin
+→ a this-lineup-only side override, falling back to your saved default →
+stable, deterministic tie-breaking. An explicit pin can still push a player
+into a 4th quarter ahead of the AYSO rule (unchanged, existing behavior) —
+the response explains that it happened and why, rather than silently
+overriding your request or silently enforcing the rule instead. Side
+preference can never cause an extra fairness violation on its own, since it
+only ever swaps two players who were already both selected to play.
 
 ### Where roster data lives
 
@@ -225,16 +322,20 @@ there's no safe way to guarantee an attachment doesn't contain something
 that shouldn't be anonymized.
 
 **What this doesn't claim:** scheduling information itself (ratings, which
-quarter someone rests, formation) still leaves the server — an LLM needs
-*something* to reason about. What's protected is the name. That protection
-only covers names already on your roster, matched as whole words — it
-can't recognize a name it's never seen before (a typo, a nickname, someone
-not yet added), which is part of why adding a new player is never allowed
-through chat. And opaque labels aren't a cryptographic anonymity guarantee
-on their own — this is a real, meaningful reduction in what leaves the
-server, not a claim that the data is unlinkable by a determined adversary.
-Server-side logs and error messages for this agent are also written to
-avoid real names, for the same reason.
+quarter someone rests, formation, exact positions, side preferences) still
+leaves the server — an LLM needs *something* to reason about, and none of
+that is personally identifying on its own. What's protected is the name.
+That protection only covers names already on your roster, matched as whole
+words — it can't recognize a name it's never seen before (a typo, a
+nickname, someone not yet added), which is part of why adding a new player
+is never allowed through chat. And opaque labels aren't a cryptographic
+anonymity guarantee on their own — this is a real, meaningful reduction in
+what leaves the server, not a claim that the data is unlinkable by a
+determined adversary. Server-side logs and error messages for this agent
+are also written to avoid real names, for the same reason. Saving a side
+preference default never involves a player name or label at all — it's a
+plain settings update, handled by its own tool call so an ordinary lineup
+request can never accidentally change it.
 
 ## File export
 
@@ -376,7 +477,8 @@ title just stays as-is rather than retrying on every later message.
     the export download chip
   - `roster.js` — the Soccer Lineup roster panel: visibility tied to the
     selected agent, open/close, list rendering, add/edit/remove against the
-    roster REST API, and its own loading/saving/saved/error states
+    roster REST API, the side-preferences selects (auto-saving against
+    their own endpoint), and its own loading/saving/saved/error states
   - `chat.js` — the chat page's entry point: composer send/streaming flow
     and bootstrap; the only file that imports from all the chat-page modules
   - `profile.js` — the profile page's entry point. Deliberately
@@ -387,18 +489,27 @@ title just stays as-is rather than retrying on every later message.
   Like everything else in `public/`, all of these are served unauthenticated
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
-- `lib/soccerLineup.js` / `lib/soccerLineupChat.js` / `lib/soccerPrivacy.js`
-  / `lib/soccerRosterRoutes.js` — the Soccer Lineup agent, split by concern:
-  `soccerLineup.js` is roster storage (atomic writes, per-account locking,
-  player IDs) and the deterministic 4-quarter scheduling algorithm;
+- `lib/soccerLineup.js` / `lib/soccerFormations.js` / `lib/soccerScheduling.js`
+  / `lib/soccerSidePreferences.js` / `lib/soccerLineupChat.js` /
+  `lib/soccerPrivacy.js` / `lib/soccerRosterRoutes.js` — the Soccer Lineup
+  agent, split by concern: `soccerLineup.js` is roster storage (atomic
+  writes, per-account locking, player IDs) and direct player CRUD for the
+  panel; `soccerFormations.js` is the position catalog (every formation's
+  exact slots, their role/side, alias/token normalization); `soccerScheduling.js`
+  is the two scheduling tool schemas and the deterministic 4-quarter,
+  position- and side-preference-aware scheduling algorithm itself;
+  `soccerSidePreferences.js` is the left/right preference defaults,
+  validation, roster migration, and the side-assignment swap step;
   `soccerPrivacy.js` builds the per-request name↔label anonymization used
   on every outbound AI call (see "What actually gets sent to the AI
   provider" above); `soccerLineupChat.js` is the chat-driven tool-calling
-  flow that ties those together; `soccerRosterRoutes.js` is the roster
-  panel's REST API (`/api/soccer/roster*`), which never calls the model at
-  all. Split into separate files since the domain logic, the privacy layer,
-  and the two different entry points (chat vs. panel) are each worth
-  testing on their own.
+  flow that ties those together, including running more than one tool call
+  in a single turn; `soccerRosterRoutes.js` is the roster panel's REST API
+  (`/api/soccer/roster*`), which never calls the model at all. Split into
+  separate files since the domain logic, the position/preference catalog,
+  the privacy layer, and the two different entry points (chat vs. panel)
+  are each worth testing on their own — see CLAUDE.md's guidance on
+  splitting before a file grows past ~500 lines.
 - `lib/privateData.js` — resolves where private, per-account data (roster
   files today) lives on disk, outside the git repo; see "Where roster data
   lives" above.
@@ -443,13 +554,40 @@ suite is fictional. Coverage includes:
   unreadable rosters, atomic-write failure leaving the previous file
   intact, concurrent writes via the per-account lock, account isolation,
   duplicate-name scheduling resolved by ID).
+- `test/soccerFormations.test.js` — the position catalog: every formation
+  has exactly 7 unique slots, role-suitability scoring is unchanged,
+  formation resolution, position/role token and alias normalization,
+  formation-specific validity, and the left/right/center pair groupings
+  used for side-assignment (including the three-slot case).
+- `test/soccerSidePreferences.test.js` — defaults, backfilling an older
+  roster without losing existing data, persisting a partial settings
+  update while preserving the rest, the default-vs-temporary-vs-explicit-none
+  resolution rules, and the side-assignment swap itself in isolation
+  (including exact-pin exclusion, equal-average stability, and the ignored
+  center slot).
+- `test/soccerScheduling.test.js` — `computeGameLineup` end-to-end for
+  every formation: default side placement, exact-position pins honored
+  ahead of and never moved by generic role pins or side preferences,
+  this-lineup-only overrides (including "ignore all"), a saved default
+  picked up automatically, invalid/unrecognized positions and slot
+  conflicts explained rather than silently substituted, an exact pin still
+  able to override the AYSO fairness rule with a warning (unchanged
+  existing behavior), and confirmation that changing only a side
+  preference never changes who plays, the bench, or quarters-played totals.
 - `test/soccerPrivacy.test.js` — the name/label scrubbing module in
   isolation: whole-word matching, ambiguous shared-name detection, chat-
-  based roster edits that never rename a player to their own label.
+  based roster edits that never rename a player to their own label, and
+  scheduling-argument validation (an unresolvable player reference, an
+  invalid quarter, or an invalid side-preference role/value is reported as
+  a warning rather than silently dropped).
 - `test/soccerPrivacyBoundary.test.js` — the integration-level guarantee:
   monkey-patches the global `fetch` to capture every outbound OpenRouter
   request and asserts no fictional player name ever appears in any of them
-  (scheduling requests, replayed history, chat-based updates, and the
-  system prompt), that an attempted add or an ambiguous name never reaches
-  the model at all, and that roster-panel edits (add/update/remove) never
-  call the model.
+  (scheduling requests, replayed history, chat-based updates, exact-position
+  pins, and the system prompt), that an attempted add or an ambiguous name
+  never reaches the model at all, that roster-panel edits (add/update/remove,
+  including saving a side preference) never call the model, that a
+  this-lineup-only side override never persists to the roster file, and
+  that a single turn asking to both save a new default AND schedule a
+  lineup actually runs both tool calls rather than silently processing only
+  the first one.

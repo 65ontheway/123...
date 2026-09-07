@@ -119,7 +119,8 @@ test('soccerLineup.js storage layer', async (t) => {
     assert.ok(!q1PlayerIds.includes(samB.id), 'the resting duplicate-named player should not be playing');
 
     const pinResult = soccerLineup.computeGameLineup(roster, { pinned: { 2: { [samA.id]: 'forward' } } });
-    const forwardSlot = pinResult.quarters[1].lineup.find((s) => s.position === 'forward');
+    const forwardSlot = pinResult.quarters[1].lineup.find((s) => s.role === 'forward');
+    assert.strictEqual(forwardSlot.position, 'striker', "2-3-1's only forward slot is the exact position 'striker'");
     assert.strictEqual(forwardSlot.player.id, samA.id, 'the specific pinned duplicate-named player must get the slot');
   });
 

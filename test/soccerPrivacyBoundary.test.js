@@ -16,6 +16,7 @@ const os = require('node:os');
 process.env.RAYGPT_DATA_DIR = path.join(os.tmpdir(), 'raygpt-test-boundary-' + process.pid);
 
 const soccerLineup = require('../lib/soccerLineup');
+const soccerPrivacy = require('../lib/soccerPrivacy');
 const { handleSoccerLineupChat } = require('../lib/soccerLineupChat');
 
 let capturedRequests = [];
@@ -47,7 +48,11 @@ function installMockFetch() {
       if (!nextResponse) {
         return new Response(JSON.stringify({ error: { message: 'no mock configured' } }), { status: 500 });
       }
-      if (nextResponse.toolCall) {
+      // `toolCalls` (plural) simulates the model asking for more than one
+      // action in a single turn (e.g. saving a setting AND scheduling a
+      // lineup); `toolCall` (singular) is the common single-action case.
+      const calls = nextResponse.toolCalls || (nextResponse.toolCall ? [nextResponse.toolCall] : null);
+      if (calls) {
         return new Response(
           JSON.stringify({
             usage,
@@ -56,13 +61,11 @@ function installMockFetch() {
                 message: {
                   role: 'assistant',
                   content: null,
-                  tool_calls: [
-                    {
-                      id: 'call_1',
-                      type: 'function',
-                      function: { name: nextResponse.toolCall.name, arguments: JSON.stringify(nextResponse.toolCall.args) },
-                    },
-                  ],
+                  tool_calls: calls.map((c, i) => ({
+                    id: `call_${i + 1}`,
+                    type: 'function',
+                    function: { name: c.name, arguments: JSON.stringify(c.args) },
+                  })),
                 },
               },
             ],
@@ -75,8 +78,8 @@ function installMockFetch() {
         { status: 200 }
       );
     }
-    const toolMsg = (body.messages || []).find((m) => m.role === 'tool');
-    return new Response(makeSseBody(`ECHO: ${toolMsg ? toolMsg.content : '(none)'}`, usage), {
+    const toolMsgs = (body.messages || []).filter((m) => m.role === 'tool');
+    return new Response(makeSseBody(`ECHO: ${toolMsgs.map((m) => m.content).join(' | ') || '(none)'}`, usage), {
       status: 200,
       headers: { 'Content-Type': 'text/event-stream' },
     });
@@ -293,5 +296,83 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
     soccerLineup.removePlayerDirect(roster, added.id);
     soccerLineup.saveRoster('boundaryCoachA', roster);
     assert.strictEqual(capturedRequests.length, 0, 'add/update/remove through the roster panel functions must never call fetch');
+  });
+
+  await t.test('saving a side preference through the panel makes zero AI requests', () => {
+    capturedRequests = [];
+    const roster = soccerLineup.loadRoster('boundaryCoachA') || { formation: '2-3-1', players: [] };
+    soccerLineup.applyLineupSettings(roster, { defender: 'left' });
+    soccerLineup.saveRoster('boundaryCoachA', roster);
+    assert.strictEqual(capturedRequests.length, 0, 'saving side preferences through the panel must never call fetch');
+  });
+
+  await t.test('a request that both saves a new default AND schedules a lineup runs both tool calls, not just the first', async () => {
+    const { alpha } = seedRoster('boundaryCoachG');
+    nextResponse = {
+      toolCalls: [
+        { name: 'update_lineup_settings', args: { defender: 'left' } },
+        { name: 'set_game_lineup', args: {} },
+      ],
+    };
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Make weaker defenders my default on the left, and set the lineup.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'boundaryCoachG',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assertNoLeaks(t, 'combined settings-save + lineup request');
+    const saved = soccerLineup.loadRoster('boundaryCoachG');
+    assert.strictEqual(saved.sidePreferences.defender, 'left', 'the settings tool call must have actually persisted');
+    // Both tool results must have reached the explain call — the explain-call
+    // request is the last captured one, and its tool messages are echoed
+    // back joined by " | " (see installMockFetch), so both are inspectable.
+    const explainCall = capturedRequests[capturedRequests.length - 1];
+    const toolMessages = explainCall.messages.filter((m) => m.role === 'tool');
+    assert.strictEqual(toolMessages.length, 2, 'both tool calls must produce a tool-result message, not just the first');
+  });
+
+  await t.test('a this-lineup-only side override never changes the saved default', async () => {
+    seedRoster('boundaryCoachH');
+    const before = soccerLineup.loadRoster('boundaryCoachH').sidePreferences;
+    nextResponse = { toolCall: { name: 'set_game_lineup', args: { sideOverrides: { defender: 'left' } } } };
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'For this game only, put the weaker defender on the left.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'boundaryCoachH',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assertNoLeaks(t, 'this-lineup-only override');
+    const after = soccerLineup.loadRoster('boundaryCoachH').sidePreferences;
+    assert.deepStrictEqual(after, before, 'a this-lineup-only override must never persist to the roster file');
+  });
+
+  await t.test('an exact-position pin (e.g. left back) resolves correctly and never leaks a name', async () => {
+    const { alpha } = seedRoster('boundaryCoachI');
+    for (let i = 0; i < 6; i++) soccerLineup.addPlayerDirect(soccerLineup.loadRoster('boundaryCoachI'), { name: `Fixture Filler ${i}` });
+    const roster = soccerLineup.loadRoster('boundaryCoachI');
+    soccerLineup.saveRoster('boundaryCoachI', roster);
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const label = ctx.labelByPlayerId.get(alpha.id);
+    nextResponse = { toolCall: { name: 'set_game_lineup', args: { pinned: { 1: { [label]: 'left_back' } } } } };
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Put Fixture Alpha at left back in the first quarter.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'boundaryCoachI',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assertNoLeaks(t, 'exact-position pin request');
+    assert.ok(res.fullText.includes('Fixture'), 'the de-anonymized reply should still read naturally to the coach');
   });
 });
