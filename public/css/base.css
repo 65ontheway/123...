@@ -65,6 +65,10 @@ body {
    background change instead). */
 #model-select:focus-visible,
 #logout-btn:focus-visible,
+#username-btn:focus-visible,
+#back-to-chat-btn:focus-visible,
+.profile-btn-danger:focus-visible,
+#change-password-btn:focus-visible,
 #send-btn:focus-visible,
 #sidebar-toggle:focus-visible,
 #new-chat-btn:focus-visible,

@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const express = require('express');
 const session = require('express-session');
 const soccerLineup = require('./lib/soccerLineup');
@@ -11,6 +10,8 @@ const { handleSoccerLineupChat } = require('./lib/soccerLineupChat');
 const exportLib = require('./lib/export');
 const exportStore = require('./lib/exportStore');
 const exportChat = require('./lib/exportChat');
+const auth = require('./lib/auth');
+const { addUsage } = require('./lib/tokenUsage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -150,16 +151,6 @@ function loadFacts() {
   return factsCache.content;
 }
 
-function credentialsMatch(a, b) {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) {
-    crypto.timingSafeEqual(bufA, bufA); // keep timing roughly constant
-    return false;
-  }
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
 function requireAuth(req, res, next) {
   if (req.session && req.session.loggedIn) return next();
   return res.status(401).json({ ok: false, error: 'Not authenticated' });
@@ -173,13 +164,12 @@ app.get('/', (req, res) => {
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   const expectedUser = process.env.APP_USERNAME || 'admin';
-  const expectedPass = process.env.APP_PASSWORD || 'changeme';
 
   const valid =
     typeof username === 'string' &&
     typeof password === 'string' &&
-    credentialsMatch(username, expectedUser) &&
-    credentialsMatch(password, expectedPass);
+    auth.credentialsMatch(username, expectedUser) &&
+    auth.verifyPassword(password);
 
   if (!valid) {
     return res.status(401).json({ ok: false, error: 'Invalid username or password.' });
@@ -197,6 +187,31 @@ app.post('/api/logout', (req, res) => {
 app.get('/chat', (req, res) => {
   if (!req.session || !req.session.loggedIn) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'views', 'chat.html'));
+});
+
+app.get('/profile', (req, res) => {
+  if (!req.session || !req.session.loggedIn) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'views', 'profile.html'));
+});
+
+app.get('/api/me', requireAuth, (req, res) => {
+  res.json({ ok: true, username: req.session.username });
+});
+
+app.get('/api/session-usage', requireAuth, (req, res) => {
+  res.json({ ok: true, usage: req.session.tokenUsage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 } });
+});
+
+app.post('/api/change-password', requireAuth, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (typeof currentPassword !== 'string' || !auth.verifyPassword(currentPassword)) {
+    return res.status(401).json({ ok: false, error: 'Current password is incorrect.' });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 6) {
+    return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters.' });
+  }
+  auth.setPassword(newPassword);
+  res.json({ ok: true });
 });
 
 app.get('/api/models', requireAuth, async (req, res) => {
@@ -272,6 +287,7 @@ app.post('/api/generate-title', requireAuth, async (req, res) => {
     }
 
     const data = await upstream.json();
+    addUsage(req.session, data?.usage);
     let title = data?.choices?.[0]?.message?.content?.trim() || '';
     title = title.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').replace(/[.!?]+$/, '');
     if (title.length > 80) title = title.slice(0, 80);
@@ -308,7 +324,15 @@ app.post('/api/chat', requireAuth, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Server is missing OPENROUTER_API_KEY' });
   }
   const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
-  const toolChatArgs = { upstreamMessages, selectedModel, maxTokens, apiKey, username: req.session.username, appUrl };
+  const toolChatArgs = {
+    upstreamMessages,
+    selectedModel,
+    maxTokens,
+    apiKey,
+    username: req.session.username,
+    appUrl,
+    session: req.session,
+  };
 
   if (selectedAgent === soccerLineup.AGENT_ID) {
     try {
@@ -357,7 +381,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
         .json({ ok: false, error: data?.error?.message || 'OpenRouter request failed' });
     }
 
-    await pipeUpstreamStream(upstream, res);
+    await pipeUpstreamStream(upstream, res, { onUsage: (u) => addUsage(req.session, u) });
   } catch (err) {
     if (!res.headersSent) {
       res.status(502).json({ ok: false, error: 'Failed to reach OpenRouter' });
