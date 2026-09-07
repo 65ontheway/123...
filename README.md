@@ -17,7 +17,10 @@ Edit `.env`:
 
 - `OPENROUTER_API_KEY` — your key from https://openrouter.ai/keys
 - `OPENROUTER_MODEL` — any OpenRouter model slug (defaults to `qwen/qwen3.8-27b`, labeled "Qwen3.8 27B (Default)" in the picker); this is just the server's default — the chat page also has a model picker
-- `APP_USERNAME` / `APP_PASSWORD` — the login credentials
+- `APP_USERNAME` / `APP_PASSWORD` — the login credentials. `APP_PASSWORD` is
+  only the *initial* password — changing it from the profile screen (see
+  below) stores a hashed replacement in `data/auth.json` instead, and that
+  file takes over from then on. The username can't be changed from the app.
 - `SESSION_SECRET` — any long random string
 - `PORT` — defaults to 3000
 - `FACTS_FILE` — optional, defaults to `facts.md` (see below)
@@ -224,6 +227,34 @@ curl -b cookies.txt -X POST http://localhost:3000/api/export \
   -o multi.xlsx
 ```
 
+## Profile settings
+
+Your username appears as a button in the header, next to the model picker —
+click it to open `/profile`:
+
+- **Session token usage** — prompt/completion/total tokens used by your
+  OpenRouter calls since you logged in (every call across all three chat
+  flows counts, including the hidden first call in a tool-calling agent's
+  two-call flow, and the title-generation call). This resets when your
+  login session ends; it's not a running lifetime total, and it's not
+  per-account cost tracking — just a quick sense of how much a session used.
+- **Clear history** — permanently deletes every chat thread stored in this
+  browser (with a confirmation first, since it can't be undone). This is
+  purely local: threads have never lived server-side, so this doesn't touch
+  the roster or any other account data.
+- **Change password** — the current app has just the one hardcoded account
+  from `.env`, so this doesn't create new accounts or touch the username;
+  it only replaces the password check. Requires your current password,
+  hashes the new one (Node's built-in `crypto.scrypt`, salted, never stored
+  in plaintext), and writes it to `data/auth.json` — git-ignored, same
+  pattern as `roster.json`/`facts.md`. Until you change it for the first
+  time, login still falls back to `APP_PASSWORD` from `.env`, so existing
+  setups need no migration step.
+
+Account deletion isn't in here — with only one hardcoded account today,
+"deleting" it doesn't have an obvious meaning yet; that's a better fit once
+real multi-account support exists.
+
 ## Auto-generated chat titles
 
 New chats are titled from the truncated first message at first, but once the
@@ -235,16 +266,20 @@ title just stays as-is rather than retrying on every later message.
 ## How it works
 
 - `public/login.html` — login form, posts to `POST /api/login`.
-- `server.js` — validates credentials against `APP_USERNAME`/`APP_PASSWORD`,
-  stores a session cookie, serves `views/chat.html` only to authenticated
-  sessions, and proxies `POST /api/chat` to OpenRouter's
-  `/chat/completions` endpoint using the server-side API key.
+- `server.js` — validates credentials (username against `APP_USERNAME`,
+  password via `lib/auth.js`), stores a session cookie, serves
+  `views/chat.html`/`views/profile.html` only to authenticated sessions,
+  and proxies `POST /api/chat` to OpenRouter's `/chat/completions` endpoint
+  using the server-side API key.
 - `views/chat.html` — chat page markup only. Served exclusively through the
   authenticated `GET /chat` route.
-- `public/css/` — the chat page's styling, one file per UI area:
-  `base.css` (theme tokens/reset), `header.css`, `sidebar.css`,
-  `messages.css` (chat transcript + empty state), `composer.css`.
-- `public/js/` — the chat page's client logic as real ES modules (loaded via
+- `views/profile.html` — the profile screen markup, served through the
+  authenticated `GET /profile` route.
+- `public/css/` — styling, one file per UI area: `base.css` (shared theme
+  tokens/reset, used by both pages), `header.css` (shared by both pages'
+  headers), `sidebar.css`, `messages.css` (chat transcript + empty state),
+  `composer.css`, `profile.css`.
+- `public/js/` — client logic as real ES modules (loaded via
   `<script type="module">`, no build step), one per concern:
   - `state.js` — thread data, localStorage persistence, thread lifecycle
   - `settings.js` — model/agent catalog, response-length, image capability
@@ -253,8 +288,12 @@ title just stays as-is rather than retrying on every later message.
     attach menu; paste-to-attach
   - `messages.js` — rendering bubbles, Markdown, the empty-state cards, and
     the export download chip
-  - `chat.js` — the entry point: composer send/streaming flow and bootstrap;
-    the only file that imports from all the others
+  - `chat.js` — the chat page's entry point: composer send/streaming flow
+    and bootstrap; the only file that imports from all the chat-page modules
+  - `profile.js` — the profile page's entry point. Deliberately
+    self-contained rather than importing `state.js`, since that module's
+    dependency chain (`sidebar.js`, `attachments.js`) wires up listeners on
+    chat.html-only elements at load time, which would throw on this page.
 
   Like everything else in `public/`, all of these are served unauthenticated
   (there's nothing sensitive in them — the API key never leaves the server),
@@ -268,5 +307,13 @@ title just stays as-is rather than retrying on every later message.
   export feature: the `export_file` tool definition and actual file
   generation (txt/csv/pdf/docx/xlsx), the in-memory temporary file store +
   rate limiter, and the keyword-gated chat-handling respectively.
-- `lib/sse.js` — the raw SSE passthrough shared by the plain chat flow and
-  every agent's explanatory (post-tool-call) streamed reply.
+- `lib/auth.js` — password hashing/verification for the single hardcoded
+  account (see Profile settings above).
+- `lib/tokenUsage.js` — accumulates each OpenRouter response's `usage` onto
+  the login session, for the profile screen's token-usage display.
+- `lib/sse.js` — the SSE passthrough shared by the plain chat flow and
+  every agent's explanatory (post-tool-call) streamed reply. Reconstructs
+  the stream line-by-line (rather than forwarding raw bytes) so it can
+  optionally observe each chunk's `usage` field and/or inject one extra
+  chunk (used by the export flow to attach download metadata) without
+  changing what the client receives.

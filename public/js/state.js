@@ -135,6 +135,18 @@ export function createThread() {
   input.focus();
 }
 
+// Wipes every thread — used by the profile screen's "Clear history" button.
+// Only mutates data; the profile page navigates back to /chat afterward,
+// whose own bootstrap (initActiveThread) already handles an empty thread
+// list by creating a fresh one, so this doesn't need to re-render anything
+// itself.
+export function clearAllHistory() {
+  if (activeController) activeController.abort();
+  state.threads = [];
+  state.activeId = null;
+  saveState();
+}
+
 export function deleteThread(id) {
   state.threads = state.threads.filter((t) => t.id !== id);
   if (state.activeId !== id) {

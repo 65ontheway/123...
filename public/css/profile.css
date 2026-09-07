@@ -1,0 +1,141 @@
+/* The profile page: account info, session token usage, clear-history, and
+   change-password. Self-contained — this page doesn't load composer.css or
+   messages.css, so form/button styling here doesn't rely on either. */
+
+#back-to-chat-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+#back-to-chat-btn:hover { border-color: var(--muted); background: var(--bubble-assistant); }
+
+#profile-main {
+  flex: 1;
+  overflow-y: auto;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+}
+.profile-heading {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+}
+.profile-username {
+  margin: 0 0 28px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.profile-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  padding: 20px 22px;
+  margin-bottom: 20px;
+}
+.profile-card h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.profile-card-desc {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.usage-stats {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+}
+.usage-stat {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bubble-assistant);
+  text-align: center;
+}
+.usage-stat dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.usage-stat dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.profile-btn-danger {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: 1px solid var(--error);
+  background: transparent;
+  color: var(--error);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.profile-btn-danger:hover { background: color-mix(in srgb, var(--error) 12%, transparent); }
+
+#change-password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#change-password-form label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 8px;
+}
+#change-password-form input {
+  font-size: 14px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+#change-password-form input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+#change-password-btn {
+  align-self: flex-start;
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 20px;
+  border-radius: 9px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+#change-password-btn:hover { background: var(--accent-hover); }
+
+.profile-status {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--accent);
+}
+.profile-status-error { color: var(--error); }

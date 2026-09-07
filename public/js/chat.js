@@ -22,6 +22,7 @@ const composer = document.getElementById('composer');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send-btn');
 const logoutBtn = document.getElementById('logout-btn');
+const usernameBtn = document.getElementById('username-btn');
 const modelSelect = document.getElementById('model-select');
 const responseLengthSelect = document.getElementById('response-length-select');
 const agentSelect = document.getElementById('agent-select');
@@ -247,7 +248,25 @@ logoutBtn.addEventListener('click', async () => {
   window.location.href = '/';
 });
 
+usernameBtn.addEventListener('click', () => {
+  window.location.href = '/profile';
+});
+
+async function loadUsername() {
+  try {
+    const res = await fetch('/api/me');
+    if (res.status === 401) {
+      window.location.href = '/';
+      return;
+    }
+    const data = await res.json();
+    if (data.ok) usernameBtn.textContent = data.username;
+  } catch {
+    // username just won't show — clicking still navigates to /profile
+  }
+}
+
 (async () => {
-  await Promise.all([loadModels(), loadAgents()]);
+  await Promise.all([loadModels(), loadAgents(), loadUsername()]);
   initActiveThread();
 })();

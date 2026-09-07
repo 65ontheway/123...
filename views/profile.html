@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>RayGPT v.0 — Profile</title>
+<link rel="stylesheet" href="/css/base.css" />
+<link rel="stylesheet" href="/css/header.css" />
+<link rel="stylesheet" href="/css/profile.css" />
+</head>
+<body>
+  <header>
+    <h1 class="brand">
+      <svg class="brand-mark" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandGradient" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+            <stop offset="0" style="stop-color:var(--accent)" />
+            <stop offset="1" style="stop-color:var(--accent-2)" />
+          </linearGradient>
+        </defs>
+        <path d="M12 0C12 6.6 6.6 12 0 12C6.6 12 12 17.4 12 24C12 17.4 17.4 12 24 12C17.4 12 12 6.6 12 0Z" fill="url(#brandGradient)" />
+      </svg>
+      <span class="brand-name">RayGPT</span>
+      <span class="brand-badge">v.0</span>
+    </h1>
+    <div class="header-actions">
+      <a id="back-to-chat-btn" href="/chat">← Back to Chat</a>
+      <button id="logout-btn">Log Out</button>
+    </div>
+  </header>
+
+  <main id="profile-main">
+    <h2 class="profile-heading">Profile settings</h2>
+    <p class="profile-username" id="profile-username">Loading…</p>
+
+    <section class="profile-card">
+      <h3>Session token usage</h3>
+      <p class="profile-card-desc">Tokens used by your OpenRouter calls since you logged in.</p>
+      <dl class="usage-stats" id="usage-stats">
+        <div class="usage-stat"><dt>Prompt</dt><dd id="usage-prompt">—</dd></div>
+        <div class="usage-stat"><dt>Completion</dt><dd id="usage-completion">—</dd></div>
+        <div class="usage-stat"><dt>Total</dt><dd id="usage-total">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="profile-card">
+      <h3>Chat history</h3>
+      <p class="profile-card-desc">Permanently deletes every chat thread stored in this browser. This can't be undone.</p>
+      <button id="clear-history-btn" class="profile-btn-danger">Clear history</button>
+      <p class="profile-status" id="clear-history-status" hidden></p>
+    </section>
+
+    <section class="profile-card">
+      <h3>Change password</h3>
+      <form id="change-password-form">
+        <label for="current-password">Current password</label>
+        <input type="password" id="current-password" autocomplete="current-password" required />
+        <label for="new-password">New password</label>
+        <input type="password" id="new-password" autocomplete="new-password" minlength="6" required />
+        <label for="confirm-password">Confirm new password</label>
+        <input type="password" id="confirm-password" autocomplete="new-password" minlength="6" required />
+        <button type="submit" id="change-password-btn">Change password</button>
+        <p class="profile-status" id="change-password-status" hidden></p>
+      </form>
+    </section>
+  </main>
+
+  <script type="module" src="/js/profile.js"></script>
+</body>
+</html>
