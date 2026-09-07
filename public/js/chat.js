@@ -212,7 +212,7 @@ composer.addEventListener('submit', async (e) => {
         ...(exportMeta ? { export: exportMeta } : {}),
       });
       touchActiveThread();
-      maybeGenerateTitle(activeThread, text, assistantText);
+      maybeGenerateTitle(activeThread, text, assistantText, agentSelect.value);
     }
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -225,7 +225,7 @@ composer.addEventListener('submit', async (e) => {
           ...(exportMeta ? { export: exportMeta } : {}),
         });
         touchActiveThread();
-        maybeGenerateTitle(activeThread, text, assistantText);
+        maybeGenerateTitle(activeThread, text, assistantText, agentSelect.value);
       } else {
         bubble.remove();
       }

@@ -18,6 +18,11 @@ const addNameInput = document.getElementById('roster-add-name');
 const addOffenseInput = document.getElementById('roster-add-offense');
 const addDefenseInput = document.getElementById('roster-add-defense');
 const addGoalieInput = document.getElementById('roster-add-goalie');
+const prefSelects = {
+  defender: document.getElementById('roster-pref-defender'),
+  midfielder: document.getElementById('roster-pref-midfielder'),
+  forward: document.getElementById('roster-pref-forward'),
+};
 
 const SOCCER_AGENT_ID = 'soccer-lineup';
 let currentRoster = null;
@@ -192,9 +197,49 @@ async function loadRoster() {
     storageNoteEl.textContent = data.storageNote || '';
     showStatus('', null);
     renderList();
+    renderSidePreferences();
   } catch {
     showStatus('Could not reach the server.', 'error');
   }
+}
+
+function renderSidePreferences() {
+  const prefs = currentRoster?.sidePreferences || {};
+  for (const role of Object.keys(prefSelects)) {
+    prefSelects[role].value = prefs[role] || 'none';
+  }
+}
+
+// Auto-saves the moment a select changes — no separate save button, same
+// as every other action in this panel giving immediate feedback. Only the
+// one role that changed is sent, so the other two are never touched,
+// matching applyLineupSettings' partial-update contract on the server.
+async function saveSidePreference(role, value) {
+  showStatus('Saving…', null);
+  try {
+    const res = await fetch('/api/soccer/roster/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [role]: value }),
+    });
+    if (res.status === 401) {
+      window.location.href = '/';
+      return;
+    }
+    const data = await res.json();
+    if (!data.ok) {
+      showStatus(data.error || 'Could not save that preference.', 'error');
+      return;
+    }
+    if (currentRoster) currentRoster.sidePreferences = data.sidePreferences;
+    showStatus('Saved.', 'ok');
+  } catch {
+    showStatus('Could not reach the server.', 'error');
+  }
+}
+
+for (const [role, select] of Object.entries(prefSelects)) {
+  select.addEventListener('change', () => saveSidePreference(role, select.value));
 }
 
 async function deletePlayer(player) {

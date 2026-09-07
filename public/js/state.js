@@ -54,14 +54,18 @@ export function makeThreadTitle(text) {
 // short, real title instead of leaving the truncated first message in
 // the sidebar forever. Only ever attempted once per chat — the flag
 // flips regardless of success so a failure doesn't retry on every message.
-export async function maybeGenerateTitle(thread, userText, assistantText) {
+export async function maybeGenerateTitle(thread, userText, assistantText, agent) {
   if (!thread || thread.titleGenerated || thread.messages.length !== 2) return;
   thread.titleGenerated = true;
   try {
     const res = await fetch('/api/generate-title', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage: userText, assistantMessage: assistantText }),
+      // `agent` tells the server whether this thread needs soccer-roster
+      // name scrubbing before its title-generation call — omitting it
+      // would silently skip that scrubbing (see server.js's
+      // /api/generate-title handler).
+      body: JSON.stringify({ userMessage: userText, assistantMessage: assistantText, agent }),
     });
     const data = await res.json().catch(() => ({}));
     if (data.ok && data.title) {

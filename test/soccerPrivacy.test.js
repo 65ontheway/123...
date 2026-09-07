@@ -113,11 +113,55 @@ test('soccerPrivacy.js', async (t) => {
     for (let i = 0; i < 4; i++) soccerLineup.addPlayerDirect(roster, { name: `Fixture Filler ${i}` });
     const ctx = soccerPrivacy.buildAnonymizationContext(roster);
     const label = ctx.labelByPlayerId.get(sam1.id);
-    const translated = soccerPrivacy.translateSchedulingArgsToIds({ resting: { 1: [label] } }, ctx);
+    const { args: translated, warnings } = soccerPrivacy.translateSchedulingArgsToIds({ resting: { 1: [label] } }, ctx);
     assert.strictEqual(translated.resting['1'][0], sam1.id);
+    assert.deepStrictEqual(warnings, []);
     const result = soccerLineup.computeGameLineup(roster, translated);
-    const output = soccerPrivacy.formatGameLineupResultAnonymized(result, ctx);
+    const output = soccerPrivacy.formatGameLineupResultAnonymized(result, ctx, warnings);
     assert.ok(!output.includes('Fixture'), 'anonymized lineup output must never contain a real name: ' + output);
+  });
+
+  await t.test('translateSchedulingArgsToIds warns on an unresolvable player label instead of silently dropping it', () => {
+    const { roster } = buildFixtureRoster();
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const { args, warnings } = soccerPrivacy.translateSchedulingArgsToIds({ resting: { 1: ['Player_999'] } }, ctx);
+    assert.deepStrictEqual(args.resting['1'], []);
+    assert.ok(warnings.some((w) => w.includes('Player_999')));
+  });
+
+  await t.test('translateSchedulingArgsToIds warns on an invalid quarter key and drops just that entry', () => {
+    const { roster, alpha } = buildFixtureRoster();
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const label = ctx.labelByPlayerId.get(alpha.id);
+    const { args, warnings } = soccerPrivacy.translateSchedulingArgsToIds({ resting: { 5: [label], 1: [label] } }, ctx);
+    assert.strictEqual(args.resting['5'], undefined);
+    assert.deepStrictEqual(args.resting['1'], [alpha.id]);
+    assert.ok(warnings.some((w) => w.includes('5')));
+  });
+
+  await t.test('translateSchedulingArgsToIds passes formation/sideOverrides/ignoreSidePreferences through untranslated', () => {
+    const { roster } = buildFixtureRoster();
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const { args, warnings } = soccerPrivacy.translateSchedulingArgsToIds(
+      { formation: '3-2-1', sideOverrides: { defender: 'left' }, ignoreSidePreferences: false },
+      ctx
+    );
+    assert.strictEqual(args.formation, '3-2-1');
+    assert.deepStrictEqual(args.sideOverrides, { defender: 'left' });
+    assert.strictEqual(args.ignoreSidePreferences, false);
+    assert.deepStrictEqual(warnings, []);
+  });
+
+  await t.test('translateSchedulingArgsToIds warns on an invalid sideOverrides role or value rather than passing it through', () => {
+    const { roster } = buildFixtureRoster();
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const { args, warnings } = soccerPrivacy.translateSchedulingArgsToIds(
+      { sideOverrides: { defender: 'sideways', goalkeeper: 'left' } },
+      ctx
+    );
+    assert.deepStrictEqual(args.sideOverrides, {});
+    assert.ok(warnings.some((w) => w.includes('sideways')));
+    assert.ok(warnings.some((w) => w.includes('goalkeeper')));
   });
 
   await t.test('deanonymize turns the model\'s label-only text back into real names', () => {
