@@ -5,7 +5,8 @@
   "description": "Simple login-gated chat page backed by an OpenRouter LLM.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "docx": "^9.7.1",
