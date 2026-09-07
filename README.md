@@ -256,6 +256,118 @@ overriding your request or silently enforcing the rule instead. Side
 preference can never cause an extra fairness violation on its own, since it
 only ever swaps two players who were already both selected to play.
 
+### Lineup variety and rotation
+
+The scheduler is deterministic by design (see above), which used to mean
+the *same* roster produced a nearly identical lineup every single time,
+even across different LLMs — nothing was actually varying week to week.
+Variety is layered on top of the same deterministic algorithm, entirely in
+application code; the model never generates or influences an assignment,
+and lineup generation never relies on model temperature.
+
+**Priority order, unchanged from before variety existed, highest first:**
+
+1. Availability and AYSO fairness (who's rested, who's already played the
+   most quarters) — a hard constraint, never affected by rotation or
+   randomness.
+2. An explicit exact-position or general-role pin — always honored exactly.
+3. Suitability: within the players who are otherwise equally eligible for a
+   slot, only those within a **suitability tolerance** (default **1 point**
+   on the existing 1–5 role-rating scale) of the best eligible score are
+   ever considered for rotation. A worse-suited player is never picked just
+   to add variety.
+4. Rotation history and seeded randomness pick between whoever's left in
+   that tolerant pool — see below.
+
+Side preferences (left/right) are still applied on top of all of this
+exactly as described above, and never change who plays.
+
+**Rotation history:** each generated lineup looks at your most recent
+**4 finalized games** (configurable) and tracks, per player: how many of
+those recent quarters they spent in each broad role, in each exact
+position, and how many they spent on the bench. A player who's recently
+played left back a lot is *less* likely (never impossible) to be picked for
+left back again while a fresher, similarly-suited teammate is available; a
+player who's recently sat the bench a lot is more likely to get a slot
+instead of sitting again. A brand-new player, or one with no recent
+finalized-game history, is treated completely normally (a neutral score,
+same as everyone else with no relevant history) rather than being
+penalized for lack of data. A missed/rested game is never treated as a
+bench appearance or as "owed" playing time — per-game playing-time rules
+(AYSO fairness) and cross-game rotation history are tracked completely
+separately.
+
+**Only *finalized* games ever count toward this history.** Generating a
+draft, clicking "generate another option" as many times as you like, or
+asking a question about a lineup never affects rotation — only marking a
+lineup "used" does (see the draft workflow below). Undoing a finalization
+removes that game's contribution again immediately.
+
+**Reproducibility:** every draft is generated with a local seeded random
+number generator, never a raw, untracked `Math.random()` call. The same
+roster, constraints, settings, and rotation history, given the same seed,
+always reproduce the exact same lineup — reopening a saved draft or
+finalized game never recomputes it, it just replays what was actually
+saved. "Generate another option" picks a fresh seed while reusing
+everything else the game started with, and tries a bounded number of times
+to avoid handing back an identical arrangement; if the roster and
+constraints genuinely leave no meaningful alternative (e.g. every slot is
+pinned), the app says so rather than pretending to offer a different one.
+
+Ask for **"rotate positions more than last game"** to temporarily turn up
+how strongly rotation history influences that one regeneration — it never
+loosens the suitability tolerance or any hard constraint, and it never
+changes your saved defaults.
+
+### Drafts, alternatives, and finalizing a lineup
+
+Every generated lineup is saved immediately as a **draft**, with a short
+game reference id and a date, before you've said anything else about it.
+Nothing is thrown away and nothing is regenerated behind the scenes — the
+workflow is:
+
+1. **Generate a draft** — "set a lineup for Saturday" (or any scheduling
+   request) creates one.
+2. **Generate another option**, as many times as you like — a fresh seed,
+   the same roster/constraints/settings/history the game started with. None
+   of these count toward rotation history until one is finalized.
+3. **Mark the chosen lineup "used" / "finalize" it** — "use this lineup,"
+   "that's the one for Saturday," "lock it in." Only now does it start
+   influencing future rotation.
+4. **Reopen it any time** — a finalized (or still-draft) game can be
+   revisited later without recomputing anything; you'll always see exactly
+   what was actually saved.
+
+Regenerating or finalizing a lineup is a plain button click (🔀 Generate
+another option / ✅ Mark used, shown right on the lineup itself) that never
+calls the model again — the app already has everything it needs. Chat
+requests work the same way: "give me another option with the same
+constraints" and "use this lineup" resolve to the specific saved game being
+discussed (the reply always mentions its reference id); if it's genuinely
+unclear which saved lineup or which date you mean, the agent asks rather
+than guessing.
+
+**Finalizing is idempotent** — clicking it twice, or asking twice, never
+double-counts a game. Generating another option for an already-finalized
+game reverts it back to a draft (an unreviewed option you're still looking
+at is never silently treated as what was actually played) until you
+finalize again — possibly the new option, possibly the old one.
+**Replacing** which draft is selected for an already-finalized game
+replaces its contribution to rotation history rather than adding a second
+game's worth. **Undo finalization** (with a confirmation prompt) removes a
+lineup from rotation history entirely if it was finalized by mistake.
+History always represents finalized *planned* assignments unless you've
+told the app about actual in-game substitutions separately.
+
+The lineup card (in chat, and when you reopen an old conversation) always
+shows: draft vs. finalized status, the game date, whether recent history
+actually influenced this particular option, and — if variety was limited
+(e.g. by exact pins or a small roster) — a short note saying so.
+
+If the roster has changed since a draft was generated, the app tells you
+rather than silently rescheduling against different players; use the
+explicit refresh action to start that game over with the current roster.
+
 ### Where roster data lives
 
 Roster files are **not** stored inside this git repository. They live in a
@@ -283,6 +395,15 @@ every save is written atomically (a temp file, then a single rename) so a
 crash or a failed write mid-save can never leave a half-written or
 corrupted file — the previous save stays intact until a new one fully
 succeeds.
+
+Saved lineups (drafts and finalized games — see "Drafts, alternatives, and
+finalizing a lineup" above) live right alongside rosters, in a sibling
+`lineups/` folder under the same private data directory, one JSON file per
+account, with the same account isolation, atomic-write, and restrictive-
+permission guarantees. Each saved game stores the exact roster snapshot,
+constraints, and settings it was generated with — never the account's
+live roster — so reopening or regenerating an old game always reflects
+what was true when it was created, not whatever's changed since.
 
 **Migrating from the old `data/rosters/` location:** earlier versions of
 this app stored rosters inside the project repo, under `data/rosters/`
@@ -336,6 +457,15 @@ are also written to avoid real names, for the same reason. Saving a side
 preference default never involves a player name or label at all — it's a
 plain settings update, handled by its own tool call so an ordinary lineup
 request can never accidentally change it.
+
+A saved lineup's game reference id and date pass through as plain text
+too — the model needs to see and echo a game id back to resolve "another
+option" or "use this lineup" on a later turn, and neither an id nor a date
+identifies a player on its own. "Another option" and "finalize" never
+recompute anything by calling the model again either: those are plain
+application-code actions (button or chat) against a lineup the app already
+generated, so there's nothing new for a request to leak in the first
+place.
 
 ## File export
 
@@ -591,3 +721,59 @@ suite is fictional. Coverage includes:
   that a single turn asking to both save a new default AND schedule a
   lineup actually runs both tool calls rather than silently processing only
   the first one.
+- `test/prng.test.js` — the seeded random number generator in isolation:
+  the same seed always reproduces the identical sequence, different seeds
+  diverge, `weightedPick` respects relative weights (verified statistically
+  over many draws), the all-zero-weight and single-candidate edge cases,
+  and end-to-end reproducibility of a full weighted-pick sequence for a
+  given seed.
+- `test/soccerRotationStats.test.js` — the rotation-history module in
+  isolation: the recent-games window is bounded and sorted correctly,
+  drafts and games with no real selection are excluded, role/exact-position/
+  bench counts are tallied only from what a game's own stored result
+  actually recorded (never backfilled from the current roster, so a missed
+  game can't look like a bench appearance), a brand-new or history-less
+  player scores a neutral 0, and the score-to-weight conversion (including
+  the `rotationBoost` "rotate more" multiplier) behaves monotonically.
+- `test/soccerSchedulingVariety.test.js` — the seeded variety/rotation layer
+  added on top of `computeGameLineup`: no seed behaves byte-for-byte
+  identically to the pre-existing deterministic behavior; the same seed
+  always reproduces the identical lineup; different seeds can produce
+  distinct lineups when real flexibility exists; a seeded run never changes
+  playing-time totals' shape, pins, or availability — only *which*
+  equally-eligible candidate fills a tied slot; every pick stays within the
+  suitability tolerance; side preferences still apply correctly;
+  `rotationInfluenced` is `false` when every slot is exactly pinned (nothing
+  left to choose between); and a player with heavy recent role/position
+  history is picked into that role measurably less often than an otherwise
+  identical, history-free teammate, without ever being penalized below a
+  neutral score for time spent on the bench.
+- `test/soccerLineupHistory.test.js` — the private draft/game storage layer:
+  a created draft's stored result matches what `computeGameLineup` produces
+  for its recorded seed; reopening or listing a saved game never calls
+  `computeGameLineup` again; roster-change detection; "generate another
+  option" always reuses the frozen roster/constraints snapshot even after a
+  live roster edit, and reverts an already-finalized game back to draft
+  status; `finalizeGame`/`unfinalizeGame` are idempotent; finalizing a
+  different draft for the same game replaces its rotation contribution
+  rather than appending a second game; only finalized games (never repeated
+  drafts) count toward rotation stats, and undoing finalization removes a
+  game's contribution again; the bounded alternative-generation retry limit
+  and its `distinctFromPrevious: false` result when no alternative exists;
+  `refreshGame` creates a new game from live data without touching the
+  stale one; a formation change on the live roster never affects an
+  already-saved game; a removed player's name still displays correctly from
+  the frozen snapshot; account isolation; a corrupt history file is
+  surfaced as an error rather than treated as empty; and concurrent
+  finalize/create calls under the same lock never corrupt data or
+  double-count.
+- `test/soccerLineupChat.test.js` — the three draft/history-aware chat
+  tools end-to-end (real `handleSoccerLineupChat`, mocked `fetch`, same
+  approach as the privacy boundary test): `set_game_lineup`,
+  `generate_lineup_alternative` (including an unresolvable game id asking
+  for clarification instead of guessing, and "rotate positions more"),
+  and `finalize_lineup` (including idempotent re-finalizing) each produce a
+  correctly shaped `delta.lineup` SSE chunk and never leak a real player
+  name into any outbound request; a finalized game actually influences a
+  later draft's rotation stats; a turn combining two actions runs both; and
+  a plain question makes no lineup-history writes at all.

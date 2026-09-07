@@ -16,6 +16,7 @@ import {
 import { loadModels, loadAgents } from './settings.js';
 import { getStagedAttachments, clearStagedAttachments } from './attachments.js';
 import { addBubble, renderUserContent, renderAssistantText, extractReasoningChunk, renderExportChip } from './messages.js';
+import { renderLineupCard } from './lineup.js';
 
 const messagesEl = document.getElementById('messages');
 const composer = document.getElementById('composer');
@@ -97,6 +98,7 @@ composer.addEventListener('submit', async (e) => {
   let structured = false;
   let finishReason = '';
   let exportMeta = null;
+  let lineupMeta = null;
 
   function ensureAssistantStructure() {
     if (structured) return;
@@ -169,6 +171,9 @@ composer.addEventListener('submit', async (e) => {
         if (delta.export) {
           exportMeta = delta.export;
         }
+        if (delta.lineup) {
+          lineupMeta = delta.lineup;
+        }
 
         const reasoningChunk = extractReasoningChunk(delta);
         if (reasoningChunk) {
@@ -206,11 +211,22 @@ composer.addEventListener('submit', async (e) => {
         ensureAssistantStructure();
         renderExportChip(bubble, exportMeta);
       }
-      activeThread.messages.push({
+      const newMessage = {
         role: 'assistant',
         content: assistantText,
         ...(exportMeta ? { export: exportMeta } : {}),
-      });
+        ...(lineupMeta ? { lineup: lineupMeta } : {}),
+      };
+      activeThread.messages.push(newMessage);
+      if (lineupMeta) {
+        ensureAssistantStructure();
+        renderLineupCard(bubble, lineupMeta, {
+          onUpdate: (newMeta) => {
+            newMessage.lineup = newMeta;
+            saveState();
+          },
+        });
+      }
       touchActiveThread();
       maybeGenerateTitle(activeThread, text, assistantText, agentSelect.value);
     }
@@ -219,11 +235,21 @@ composer.addEventListener('submit', async (e) => {
       if (assistantText) {
         bubble.classList.remove('pending');
         bubble.classList.add('assistant');
-        activeThread.messages.push({
+        const newMessage = {
           role: 'assistant',
           content: assistantText,
           ...(exportMeta ? { export: exportMeta } : {}),
-        });
+          ...(lineupMeta ? { lineup: lineupMeta } : {}),
+        };
+        activeThread.messages.push(newMessage);
+        if (lineupMeta) {
+          renderLineupCard(bubble, lineupMeta, {
+            onUpdate: (newMeta) => {
+              newMessage.lineup = newMeta;
+              saveState();
+            },
+          });
+        }
         touchActiveThread();
         maybeGenerateTitle(activeThread, text, assistantText, agentSelect.value);
       } else {

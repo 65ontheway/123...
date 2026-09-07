@@ -41,6 +41,17 @@ export function getActiveThread() {
   return state.threads.find((t) => t.id === state.activeId) || null;
 }
 
+// Passed to messages.js's renderHistory as onLineupUpdate: a lineup card's
+// own action (generate another option / finalize / undo) reports its new
+// status back here so it survives a reload — mutating the exact message
+// object already in the thread's array, same "direct reference" approach
+// chat.js uses for a freshly streamed message (see composer submit handler
+// below).
+function handleLineupUpdate(message, newMeta) {
+  message.lineup = newMeta;
+  saveState();
+}
+
 export function makeThreadTitle(text) {
   const trimmed = text.trim().replace(/\s+/g, ' ');
   // Cap well past anything the sidebar could ever visually fit (even at
@@ -113,7 +124,7 @@ export function switchToThread(id) {
   const thread = state.threads.find((t) => t.id === id);
   if (!thread) return;
   state.activeId = id;
-  renderHistory(thread.messages);
+  renderHistory(thread.messages, { onLineupUpdate: handleLineupUpdate });
   applyThreadModel(thread);
   renderThreadList();
   saveState();
@@ -132,7 +143,7 @@ export function createThread() {
   };
   state.threads.push(thread);
   state.activeId = thread.id;
-  renderHistory(thread.messages);
+  renderHistory(thread.messages, { onLineupUpdate: handleLineupUpdate });
   renderThreadList();
   saveState();
   closeSidebarOnMobile();
@@ -179,7 +190,7 @@ export function initActiveThread() {
     state.activeId = [...state.threads].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
   }
   const thread = getActiveThread();
-  renderHistory(thread.messages);
+  renderHistory(thread.messages, { onLineupUpdate: handleLineupUpdate });
   applyThreadModel(thread);
   renderThreadList();
 }
