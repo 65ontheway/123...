@@ -90,12 +90,13 @@ header::after {
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-#logout-btn:hover,
-#username-btn:hover { border-color: var(--muted); background: var(--bubble-assistant); }
+#logout-btn:hover { border-color: var(--muted); background: var(--bubble-assistant); }
+#username-btn:hover { background: var(--bubble-assistant); }
 #username-btn {
   display: flex;
   align-items: center;
   gap: 6px;
+  border: none;
 }
 #username-btn::before {
   content: '👤';
