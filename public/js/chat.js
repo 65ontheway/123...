@@ -15,7 +15,7 @@ import {
 } from './state.js';
 import { loadModels, loadAgents } from './settings.js';
 import { getStagedAttachments, clearStagedAttachments } from './attachments.js';
-import { addBubble, renderUserContent, renderAssistantText, extractReasoningChunk } from './messages.js';
+import { addBubble, renderUserContent, renderAssistantText, extractReasoningChunk, renderExportChip } from './messages.js';
 
 const messagesEl = document.getElementById('messages');
 const composer = document.getElementById('composer');
@@ -95,6 +95,7 @@ composer.addEventListener('submit', async (e) => {
   let reasoningText = '';
   let structured = false;
   let finishReason = '';
+  let exportMeta = null;
 
   function ensureAssistantStructure() {
     if (structured) return;
@@ -164,6 +165,9 @@ composer.addEventListener('submit', async (e) => {
         if (json.choices?.[0]?.finish_reason) {
           finishReason = json.choices[0].finish_reason;
         }
+        if (delta.export) {
+          exportMeta = delta.export;
+        }
 
         const reasoningChunk = extractReasoningChunk(delta);
         if (reasoningChunk) {
@@ -197,7 +201,15 @@ composer.addEventListener('submit', async (e) => {
         const note = bubble.querySelector('.truncated-note');
         if (note) note.hidden = false;
       }
-      activeThread.messages.push({ role: 'assistant', content: assistantText });
+      if (exportMeta) {
+        ensureAssistantStructure();
+        renderExportChip(bubble, exportMeta);
+      }
+      activeThread.messages.push({
+        role: 'assistant',
+        content: assistantText,
+        ...(exportMeta ? { export: exportMeta } : {}),
+      });
       touchActiveThread();
       maybeGenerateTitle(activeThread, text, assistantText);
     }
@@ -206,7 +218,11 @@ composer.addEventListener('submit', async (e) => {
       if (assistantText) {
         bubble.classList.remove('pending');
         bubble.classList.add('assistant');
-        activeThread.messages.push({ role: 'assistant', content: assistantText });
+        activeThread.messages.push({
+          role: 'assistant',
+          content: assistantText,
+          ...(exportMeta ? { export: exportMeta } : {}),
+        });
         touchActiveThread();
         maybeGenerateTitle(activeThread, text, assistantText);
       } else {
