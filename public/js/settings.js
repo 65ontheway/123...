@@ -84,6 +84,10 @@ export async function loadAgents() {
     }
     const saved = localStorage.getItem('raygpt.agent');
     agentSelect.value = saved && [...agentSelect.options].some((o) => o.value === saved) ? saved : data.default;
+    // Setting .value programmatically doesn't fire 'change' on its own —
+    // dispatch one so modules that only listen for user-driven changes
+    // (roster.js, showing/hiding its panel button) also see this initial value.
+    agentSelect.dispatchEvent(new Event('change'));
   } catch (err) {
     // dropdown just stays empty; chat still works without an agent selected
   }

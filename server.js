@@ -12,6 +12,9 @@ const exportStore = require('./lib/exportStore');
 const exportChat = require('./lib/exportChat');
 const auth = require('./lib/auth');
 const { addUsage } = require('./lib/tokenUsage');
+const soccerPrivacy = require('./lib/soccerPrivacy');
+const { PrivateDataConfigError } = require('./lib/privateData');
+const soccerRosterRoutes = require('./lib/soccerRosterRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -243,7 +246,7 @@ app.get('/api/agents', requireAuth, (req, res) => {
 // attachment-laden) message objects, since a title has no need to re-upload
 // an image or a PDF just to name the conversation.
 app.post('/api/generate-title', requireAuth, async (req, res) => {
-  const { userMessage, assistantMessage } = req.body || {};
+  const { userMessage, assistantMessage, agent } = req.body || {};
   if (typeof userMessage !== 'string' || typeof assistantMessage !== 'string') {
     return res.status(400).json({ ok: false, error: 'userMessage and assistantMessage are required' });
   }
@@ -251,6 +254,32 @@ app.post('/api/generate-title', requireAuth, async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: 'Server is missing OPENROUTER_API_KEY' });
+  }
+
+  // A soccer-lineup thread's messages can carry real player names — this
+  // titling call is its own outbound AI request, so it needs the same
+  // scrubbing the chat flow itself gets. If the roster can't be read, or a
+  // mentioned name is ambiguous, fall back to a generic placeholder rather
+  // than risk sending a name through unscrubbed.
+  let titleUserText = userMessage;
+  let titleAssistantText = assistantMessage;
+  if (agent === soccerLineup.AGENT_ID) {
+    let roster = null;
+    try {
+      roster = soccerLineup.loadRoster(req.session.username);
+    } catch {
+      roster = null;
+    }
+    if (roster) {
+      const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+      const scrubbedUser = soccerPrivacy.scrubText(userMessage, ctx);
+      const scrubbedAssistant = soccerPrivacy.scrubText(assistantMessage, ctx);
+      titleUserText = scrubbedUser.ambiguousNames.size === 0 ? scrubbedUser.text : '(soccer roster update)';
+      titleAssistantText = scrubbedAssistant.ambiguousNames.size === 0 ? scrubbedAssistant.text : '(soccer roster update)';
+    } else {
+      titleUserText = '(soccer roster update)';
+      titleAssistantText = '(soccer roster update)';
+    }
   }
 
   try {
@@ -273,7 +302,7 @@ app.post('/api/generate-title', requireAuth, async (req, res) => {
           },
           {
             role: 'user',
-            content: `User: ${userMessage.slice(0, 500) || '(sent an attachment)'}\nAssistant: ${assistantMessage.slice(0, 500)}`,
+            content: `User: ${titleUserText.slice(0, 500) || '(sent an attachment)'}\nAssistant: ${titleAssistantText.slice(0, 500)}`,
           },
         ],
         max_tokens: 20,
@@ -425,6 +454,30 @@ app.get('/api/files/:id', requireAuth, (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${entry.filename}.${entry.extension}"`);
   res.send(entry.buffer);
 });
+
+// The roster panel's REST API (no LLM involved anywhere in it) lives in
+// its own module per CLAUDE.md's file-size guidance.
+app.use('/api/soccer', soccerRosterRoutes);
+
+// Ensures the private roster directory exists and migrates any legacy
+// data/rosters/*.json into it (see lib/rosterMigration.js) before the
+// server starts accepting requests. A misconfigured RAYGPT_DATA_DIR that
+// resolves inside this repo is a hard startup failure, not a warning —
+// private data must never land somewhere a git operation could pick it up.
+try {
+  const migrationSummary = soccerLineup.initRosterStorage();
+  const { migrated, conflicts, skippedInvalid, errors } = migrationSummary;
+  if (migrated.length) console.log(`Roster migration: moved ${migrated.length} file(s) to the private data directory.`);
+  if (conflicts.length) console.warn(`Roster migration: ${conflicts.length} file(s) already exist at the destination and differ — resolve manually: ${conflicts.join(', ')}`);
+  if (skippedInvalid.length) console.warn(`Roster migration: ${skippedInvalid.length} legacy file(s) were not valid roster JSON and were left in place: ${skippedInvalid.join(', ')}`);
+  if (errors.length) console.warn(`Roster migration: ${errors.length} file(s) could not be migrated: ${errors.map((e) => `${e.file} (${e.reason})`).join(', ')}`);
+} catch (err) {
+  if (err instanceof PrivateDataConfigError) {
+    console.error(err.message);
+    process.exit(1);
+  }
+  throw err;
+}
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);

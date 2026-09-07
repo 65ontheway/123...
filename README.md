@@ -112,43 +112,129 @@ multiple quarters) would force someone into a 4th quarter early, the
 response says so explicitly rather than silently violating the rule or
 silently overriding your request.
 
+### The roster panel
+
+Click **Roster** in the sidebar (visible whenever **Soccer Lineup** is the
+selected agent) to open a slide-over panel listing every player and their
+offense/defense/goalie ratings. Add, edit, or remove a player directly here
+— none of this goes through the model at all, so a rating can never get
+mis-typed or mis-heard by an LLM, and removing a player asks for
+confirmation first. The panel shows its own loading/saving/saved/error
+states (success is only reported once the server has actually confirmed the
+write), and it's keyboard- and mobile-friendly (Escape or a backdrop click
+closes it, same as the rest of the app's overlays).
+
+The panel also tells you exactly where your roster is stored — see
+"Where roster data lives" below; the wording only ever says "this Mac" when
+the server process is actually running on macOS.
+
+A brand-new account has no roster yet; the panel shows an empty state and
+lets you add your first player straight away — no setup step or file to
+create first.
+
 ### Managing the roster from chat
 
-You don't need to hand-edit a file to get started or to keep the roster up
-to date — just tell the agent in plain English, e.g. "add Sarah, she's a 4
-offense, 2 defense, 1 goalie", "bump Emma's defense to a 4", or "remove
-Jenny, she moved away." As with scheduling, the model only extracts what
-changed; the app applies the add/update/remove to the roster file itself,
-so a rating never gets silently mis-typed by the model. Ratings you don't
-mention default to **3** on a new player. A brand-new account has no
-roster file yet — asking the agent to add players creates one
-automatically, so there's no setup step required before your first
-message.
+You can also update an existing player through the chat, in plain English —
+e.g. "bump Emma's defense to a 4" or "remove Jenny, she moved away." As with
+scheduling, the model never sees Emma or Jenny's real name (more on that
+below); it only extracts what changed, and the app applies the update to
+the roster file itself, so a rating never gets silently mis-typed by the
+model.
 
-You can still hand-edit the file directly if you prefer:
-
-```bash
-mkdir -p data/rosters
-cp roster.json.example data/rosters/<your-login-username>.json
-```
-
-The filename must match the username you log in with (e.g. `admin.json` if
-`APP_USERNAME=admin`) — rosters are isolated per account so player data is
-never shared between logins, even though today there's only the one
-account. Edit it with your real roster — a `formation` (see the four
-supported below) and a `players` array, each with a `name` and a `skills`
-object rating them **1-5** on `offense`, `defense`, and `goalie`. A
-midfielder's fit for a slot is scored as the average of `offense` and
-`defense`, since that position plays both ways. Like `facts.md`, everything
-under `data/rosters/` is git-ignored (it's real kids' names and stats) and
-re-read automatically when it changes — no restart needed.
+**Adding a brand-new player always happens through the roster panel, never
+through chat.** A chat message that looks like it's trying to introduce a
+new name ("add Sarah...", "sign up a new player...") is caught locally and
+declined with a pointer to the panel, before anything is sent to the model
+— there's no safe way to anonymize a name the app has never seen before, so
+the app never tries to guess at one. If a request mentions a name that's
+ambiguous (two players share it) or that the app doesn't recognize at all,
+you'll get a local clarification request instead of a guess — again, before
+any AI call happens.
 
 Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. Set
-one as your roster file's default or name one per request ("set the lineup
-in a 3-2-1"). If a request can't be fully satisfied (an unrecognized name,
-two players pinned to the same slot in the same quarter, more players
-resting than the roster can cover), the response explains what happened
-instead of silently guessing.
+one as your roster's default in the panel, or name one per request ("set
+the lineup in a 3-2-1"). A midfielder's fit for a slot is scored as the
+average of `offense` and `defense`, since that position plays both ways. If
+a request can't be fully satisfied (two players pinned to the same slot in
+the same quarter, more players resting than the roster can cover), the
+response explains what happened instead of silently guessing.
+
+### Where roster data lives
+
+Roster files are **not** stored inside this git repository. They live in a
+private, per-user application-data folder outside any project checkout:
+
+| Platform | Default location |
+| --- | --- |
+| macOS | `~/Library/Application Support/RayGPT/rosters/` |
+| Windows | `%APPDATA%\RayGPT\rosters\` |
+| Linux | `$XDG_DATA_HOME/RayGPT/rosters/` (or `~/.local/share/RayGPT/rosters/`) |
+
+Override the location with `RAYGPT_DATA_DIR` in `.env` (rosters go in a
+`rosters/` subfolder of whatever you set). A relative path resolves against
+the directory the server was started from, not the project folder. The
+server refuses to start if this resolves to anywhere inside the project
+repo — private data isn't allowed to live somewhere it could get committed,
+zipped, or backed up as part of the project — and exits with a clear error
+telling you to change `RAYGPT_DATA_DIR`.
+
+Each account's roster is one JSON file, named after the login username
+(e.g. `admin.json`), so rosters are never shared between accounts. Where
+the underlying filesystem supports it, the roster directory and each roster
+file are created with restrictive permissions (owner read/write only) and
+every save is written atomically (a temp file, then a single rename) so a
+crash or a failed write mid-save can never leave a half-written or
+corrupted file — the previous save stays intact until a new one fully
+succeeds.
+
+**Migrating from the old `data/rosters/` location:** earlier versions of
+this app stored rosters inside the project repo, under `data/rosters/`
+(already git-ignored, but still inside the checkout). On startup, the
+server automatically copies any files found there into the new private
+location — the legacy files are only ever copied, never moved or deleted,
+and a copy is verified against its source before the app trusts it. If a
+file already exists at the destination, it's left alone rather than
+overwritten, and startup logs report a mismatch by filename only (never
+player names or ratings) so you can resolve it by hand if needed. The
+legacy `data/rosters/` path stays git-ignored either way. Once you've
+confirmed your roster shows up correctly in the panel, it's safe to delete
+the old `data/rosters/` folder — the app never reads from it again except
+to check for anything not yet migrated.
+
+**Backups:** since roster data lives outside the repo, it isn't covered by
+whatever backs up your git history. Back up the private data directory
+above the same way you'd back up any other personal file on your machine.
+
+### What actually gets sent to the AI provider
+
+For every Soccer Lineup request — scheduling, chat-based roster updates, and
+the follow-up explanation that comes back afterward — real player names
+never leave the server. Before any OpenRouter call, the app builds a
+per-request mapping from each player to an opaque label (`Player_1`,
+`Player_2`, ...); the current message, the entire replayed conversation
+history, the system prompt describing the roster, and every tool call's
+arguments and results all go out labeled, never named. The model's reply is
+translated back to real names locally, after the response comes back, so
+what you see in the chat still reads naturally.
+
+This covers the request in full, not just the latest message — including
+older messages replayed for context and the title the app generates for a
+new chat. Attachments (images, PDFs, etc.) aren't supported by this agent
+at all; a message with one is blocked locally before any AI call, since
+there's no safe way to guarantee an attachment doesn't contain something
+that shouldn't be anonymized.
+
+**What this doesn't claim:** scheduling information itself (ratings, which
+quarter someone rests, formation) still leaves the server — an LLM needs
+*something* to reason about. What's protected is the name. That protection
+only covers names already on your roster, matched as whole words — it
+can't recognize a name it's never seen before (a typo, a nickname, someone
+not yet added), which is part of why adding a new player is never allowed
+through chat. And opaque labels aren't a cryptographic anonymity guarantee
+on their own — this is a real, meaningful reduction in what leaves the
+server, not a claim that the data is unlinkable by a determined adversary.
+Server-side logs and error messages for this agent are also written to
+avoid real names, for the same reason.
 
 ## File export
 
@@ -247,7 +333,7 @@ click it to open `/profile`:
   it only replaces the password check. Requires your current password,
   hashes the new one (Node's built-in `crypto.scrypt`, salted, never stored
   in plaintext), and writes it to `data/auth.json` — git-ignored, same
-  pattern as `roster.json`/`facts.md`. Until you change it for the first
+  pattern as `facts.md`. Until you change it for the first
   time, login still falls back to `APP_PASSWORD` from `.env`, so existing
   setups need no migration step.
 
@@ -288,6 +374,9 @@ title just stays as-is rather than retrying on every later message.
     attach menu; paste-to-attach
   - `messages.js` — rendering bubbles, Markdown, the empty-state cards, and
     the export download chip
+  - `roster.js` — the Soccer Lineup roster panel: visibility tied to the
+    selected agent, open/close, list rendering, add/edit/remove against the
+    roster REST API, and its own loading/saving/saved/error states
   - `chat.js` — the chat page's entry point: composer send/streaming flow
     and bootstrap; the only file that imports from all the chat-page modules
   - `profile.js` — the profile page's entry point. Deliberately
@@ -298,11 +387,24 @@ title just stays as-is rather than retrying on every later message.
   Like everything else in `public/`, all of these are served unauthenticated
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
-- `lib/soccerLineup.js` / `lib/soccerLineupChat.js` — the Soccer Lineup
-  agent's domain logic (roster file I/O, the two tool definitions, the
-  deterministic 4-quarter scheduling algorithm) and its chat-handling
-  respectively, split into two files since the domain logic is worth
-  testing on its own.
+- `lib/soccerLineup.js` / `lib/soccerLineupChat.js` / `lib/soccerPrivacy.js`
+  / `lib/soccerRosterRoutes.js` — the Soccer Lineup agent, split by concern:
+  `soccerLineup.js` is roster storage (atomic writes, per-account locking,
+  player IDs) and the deterministic 4-quarter scheduling algorithm;
+  `soccerPrivacy.js` builds the per-request name↔label anonymization used
+  on every outbound AI call (see "What actually gets sent to the AI
+  provider" above); `soccerLineupChat.js` is the chat-driven tool-calling
+  flow that ties those together; `soccerRosterRoutes.js` is the roster
+  panel's REST API (`/api/soccer/roster*`), which never calls the model at
+  all. Split into separate files since the domain logic, the privacy layer,
+  and the two different entry points (chat vs. panel) are each worth
+  testing on their own.
+- `lib/privateData.js` — resolves where private, per-account data (roster
+  files today) lives on disk, outside the git repo; see "Where roster data
+  lives" above.
+- `lib/rosterMigration.js` — the one-time, non-destructive copy of any
+  legacy `data/rosters/*.json` files into the private data directory, run
+  at server startup.
 - `lib/export.js` / `lib/exportStore.js` / `lib/exportChat.js` — the file
   export feature: the `export_file` tool definition and actual file
   generation (txt/csv/pdf/docx/xlsx), the in-memory temporary file store +
@@ -316,4 +418,38 @@ title just stays as-is rather than retrying on every later message.
   the stream line-by-line (rather than forwarding raw bytes) so it can
   optionally observe each chunk's `usage` field and/or inject one extra
   chunk (used by the export flow to attach download metadata) without
-  changing what the client receives.
+  changing what the client receives. The Soccer Lineup agent's explanatory
+  reply is buffered and de-anonymized as a whole before being sent to the
+  browser as one or two chunks, rather than streamed token-by-token like
+  every other agent — the trade-off exists because a name label could
+  otherwise be split across stream chunks and missed during substitution.
+
+## Tests
+
+```bash
+npm test
+```
+
+Runs the full suite (`node --test test/*.test.js`, Node's built-in test
+runner — no extra test-framework dependency). All fixture data in the test
+suite is fictional. Coverage includes:
+
+- `test/privateData.test.js` — private-directory resolution, in-repo
+  rejection, atomic writes.
+- `test/rosterMigration.test.js` — legacy `data/rosters/` migration:
+  clean migration, idempotent re-runs, and a genuine conflict (destination
+  never overwritten, legacy original never touched).
+- `test/soccerLineup.test.js` — the storage layer (missing vs. invalid vs.
+  unreadable rosters, atomic-write failure leaving the previous file
+  intact, concurrent writes via the per-account lock, account isolation,
+  duplicate-name scheduling resolved by ID).
+- `test/soccerPrivacy.test.js` — the name/label scrubbing module in
+  isolation: whole-word matching, ambiguous shared-name detection, chat-
+  based roster edits that never rename a player to their own label.
+- `test/soccerPrivacyBoundary.test.js` — the integration-level guarantee:
+  monkey-patches the global `fetch` to capture every outbound OpenRouter
+  request and asserts no fictional player name ever appears in any of them
+  (scheduling requests, replayed history, chat-based updates, and the
+  system prompt), that an attempted add or an ambiguous name never reaches
+  the model at all, and that roster-panel edits (add/update/remove) never
+  call the model.

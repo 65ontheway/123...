@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/css/sidebar.css" />
 <link rel="stylesheet" href="/css/messages.css" />
 <link rel="stylesheet" href="/css/composer.css" />
+<link rel="stylesheet" href="/css/roster.css" />
 </head>
 <body>
   <header>
@@ -51,6 +52,7 @@
           <label for="agent-select">Agent</label>
           <select id="agent-select"></select>
         </div>
+        <button type="button" id="roster-panel-btn" hidden>👥 Roster</button>
       </div>
     </aside>
     <div id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize chat history"></div>
@@ -89,11 +91,34 @@
     </main>
   </div>
 
+  <div id="roster-panel-backdrop"></div>
+  <aside id="roster-panel" aria-label="Roster">
+    <div class="roster-panel-header">
+      <h2>Roster</h2>
+      <button type="button" id="roster-panel-close" aria-label="Close roster panel">✕</button>
+    </div>
+    <p id="roster-storage-note" class="roster-storage-note"></p>
+    <p id="roster-status" class="roster-status" hidden></p>
+    <div id="roster-list" class="roster-list"></div>
+    <form id="roster-add-form">
+      <h3>Add a player</h3>
+      <label for="roster-add-name">Name</label>
+      <input type="text" id="roster-add-name" required maxlength="100" autocomplete="off" />
+      <div class="roster-rating-row">
+        <label>Offense <input type="number" id="roster-add-offense" min="1" max="5" value="3" /></label>
+        <label>Defense <input type="number" id="roster-add-defense" min="1" max="5" value="3" /></label>
+        <label>Goalie <input type="number" id="roster-add-goalie" min="1" max="5" value="3" /></label>
+      </div>
+      <button type="submit">Add player</button>
+    </form>
+  </aside>
+
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/dompurify.js"></script>
   <script src="/vendor/mammoth.js"></script>
   <script src="/vendor/exceljs.js"></script>
   <script type="module" src="/js/chat.js"></script>
+  <script type="module" src="/js/roster.js"></script>
 </body>
 </html>
 
