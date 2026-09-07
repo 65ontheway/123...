@@ -68,6 +68,28 @@ function makeFileChipEl(name, icon) {
   return chip;
 }
 
+// Renders the small download link the export_file tool's result produces
+// (see chat.js / lib/exportChat.js). Only ever called for the one message
+// that actually carries export metadata — never a persistent per-message
+// control.
+export function renderExportChip(bubble, exportMeta) {
+  if (!exportMeta || !exportMeta.url) return;
+  const link = document.createElement('a');
+  link.className = 'msg-export';
+  link.href = exportMeta.url;
+  link.download = exportMeta.filename || 'export';
+  link.title = `Download ${(exportMeta.format || 'file').toUpperCase()}`;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  const icon = document.createElement('span');
+  icon.className = 'export-icon';
+  icon.textContent = '⬇️';
+  const label = document.createElement('span');
+  label.textContent = exportMeta.filename || 'Download';
+  link.append(icon, label);
+  bubble.appendChild(link);
+}
+
 export function renderAssistantText(el, text) {
   if (window.marked && window.DOMPurify) {
     el.innerHTML = DOMPurify.sanitize(marked.parse(text));
@@ -170,6 +192,7 @@ export function renderHistory(messages) {
     const bubble = addBubble(m.role === 'user' ? 'user' : 'assistant', '');
     if (m.role === 'assistant') {
       renderAssistantText(bubble, m.content);
+      renderExportChip(bubble, m.export);
     } else {
       renderUserContent(bubble, m.content);
     }

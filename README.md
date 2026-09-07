@@ -84,8 +84,9 @@ tied to any one chat):
 - **Response length** — Short (500 tokens), Medium (1000, default), or Long
   (no cap — bounded only by the model's own limit). Applies to the next
   message sent, from any chat.
-- **Agent** — **General Assistant** is the plain chat flow. **Soccer Lineup**
-  is a real tool-calling agent — see below.
+- **Agent** — **General Assistant** is the plain chat flow (it can also
+  export files — see below). **Soccer Lineup** is a real tool-calling
+  agent — see below.
 
 ## Soccer Lineup agent
 
@@ -146,6 +147,83 @@ two players pinned to the same slot in the same quarter, more players
 resting than the roster can cover), the response explains what happened
 instead of silently guessing.
 
+## File export
+
+Ask the **General Assistant** to export something — "export this as a Word
+document", "give me a PDF", "save that table as a CSV" — and it generates a
+real file server-side and adds a small download link (⬇️) at the bottom of
+that one reply. It's never a persistent per-message button: the link only
+appears on the specific response that produced a file.
+
+Supported formats: `txt`, `csv`, `pdf`, `docx`, `xlsx` (including multiple
+named sheets). As with the other tools, the model never generates the file
+itself — it only decides the format, filename, and content/rows; a plain
+Node function (`lib/export.js`) builds the actual file with free,
+open-source libraries (`pdfkit` with standard fonts only, `docx`, and the
+`exceljs` already used for spreadsheet attachments — no paid/licensed
+SDKs). For `pdf`/`docx`, a small built-in Markdown subset (`#` headings,
+`**bold**`, `-`/`*` bullets, paragraphs) is rendered into the document;
+anything fancier in the source Markdown just falls back to a plain
+paragraph rather than failing.
+
+Generated files aren't attached inline — they're held in memory for **15
+minutes** behind a short-lived `/api/files/:id` link, then discarded (never
+written to disk, never kept indefinitely). If you reopen an old chat after
+that window, the download chip is still there (it's part of the saved
+thread), but the link itself will 404 — export again to get a fresh one.
+Export requests are also rate-limited to 10/minute per account.
+
+Offering the export tool on every single message would mean an extra,
+non-streaming round trip before any reply could start — paid by every
+message just to catch the rare export request. Instead, `lib/exportChat.js`
+only offers the tool when the message plausibly asks for a file (a cheap
+keyword check for words like "export", "download", "pdf", "csv", "excel",
+"word doc", etc.); everything else keeps the normal single streaming call,
+with no added latency. The model is still the real decision-maker on
+whether to actually call the tool — a passing mention of "PDF" won't
+produce a file, it just clears the cheap filter that decides whether to
+offer the option at all.
+
+**Testing `/api/export` directly** (the same JSON shape the model's tool
+call uses; requires being logged in — pass your session cookie jar):
+
+```bash
+# Log in first to get a session cookie
+curl -c cookies.txt -X POST http://localhost:3000/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"changeme"}'
+
+# txt
+curl -b cookies.txt -X POST http://localhost:3000/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"format":"txt","filename":"notes","content":"Hello world"}' \
+  -o notes.txt
+
+# csv
+curl -b cookies.txt -X POST http://localhost:3000/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"format":"csv","filename":"scores","headers":["Name","Score"],"rows":[["Sarah",5],["Emma",4]]}' \
+  -o scores.csv
+
+# pdf (Markdown body)
+curl -b cookies.txt -X POST http://localhost:3000/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"format":"pdf","filename":"report","title":"Report","markdown":"# Heading\n\n**Bold** text.\n\n- one\n- two"}' \
+  -o report.pdf
+
+# docx (Markdown body)
+curl -b cookies.txt -X POST http://localhost:3000/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"format":"docx","filename":"doc","markdown":"# Title\n\nSome text."}' \
+  -o doc.docx
+
+# xlsx (multiple sheets)
+curl -b cookies.txt -X POST http://localhost:3000/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"format":"xlsx","filename":"multi","sheets":[{"name":"One","headers":["X"],"rows":[[1]]},{"name":"Two","rows":[[2]]}]}' \
+  -o multi.xlsx
+```
+
 ## Auto-generated chat titles
 
 New chats are titled from the truncated first message at first, but once the
@@ -173,15 +251,22 @@ title just stays as-is rather than retrying on every later message.
   - `sidebar.js` — thread list UI, rename, resize, mobile drawer
   - `attachments.js` — staging/extracting images, PDFs, Word/Excel; the
     attach menu; paste-to-attach
-  - `messages.js` — rendering bubbles, Markdown, the empty-state cards
+  - `messages.js` — rendering bubbles, Markdown, the empty-state cards, and
+    the export download chip
   - `chat.js` — the entry point: composer send/streaming flow and bootstrap;
     the only file that imports from all the others
 
   Like everything else in `public/`, all of these are served unauthenticated
   (there's nothing sensitive in them — the API key never leaves the server),
   the same way `/vendor/*.js` already are.
-- `lib/soccerLineup.js` — the Soccer Lineup agent's domain logic (reading
-  and writing the per-account roster file, the `set_game_lineup` and
-  `manage_roster` tool definitions, the deterministic 4-quarter scheduling
-  algorithm, and roster add/update/remove logic), kept out of `server.js`
-  as its own module.
+- `lib/soccerLineup.js` / `lib/soccerLineupChat.js` — the Soccer Lineup
+  agent's domain logic (roster file I/O, the two tool definitions, the
+  deterministic 4-quarter scheduling algorithm) and its chat-handling
+  respectively, split into two files since the domain logic is worth
+  testing on its own.
+- `lib/export.js` / `lib/exportStore.js` / `lib/exportChat.js` — the file
+  export feature: the `export_file` tool definition and actual file
+  generation (txt/csv/pdf/docx/xlsx), the in-memory temporary file store +
+  rate limiter, and the keyword-gated chat-handling respectively.
+- `lib/sse.js` — the raw SSE passthrough shared by the plain chat flow and
+  every agent's explanatory (post-tool-call) streamed reply.
