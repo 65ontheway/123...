@@ -15,6 +15,8 @@ const { addUsage } = require('./lib/tokenUsage');
 const soccerPrivacy = require('./lib/soccerPrivacy');
 const { PrivateDataConfigError } = require('./lib/privateData');
 const soccerRosterRoutes = require('./lib/soccerRosterRoutes');
+const soccerLineupRoutes = require('./lib/soccerLineupRoutes');
+const soccerLineupHistory = require('./lib/soccerLineupHistory');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -455,9 +457,11 @@ app.get('/api/files/:id', requireAuth, (req, res) => {
   res.send(entry.buffer);
 });
 
-// The roster panel's REST API (no LLM involved anywhere in it) lives in
-// its own module per CLAUDE.md's file-size guidance.
+// The roster panel's REST API and the lineup draft/finalization REST API
+// (no LLM involved anywhere in either) live in their own modules per
+// CLAUDE.md's file-size guidance.
 app.use('/api/soccer', soccerRosterRoutes);
+app.use('/api/soccer', soccerLineupRoutes);
 
 // Ensures the private roster directory exists and migrates any legacy
 // data/rosters/*.json into it (see lib/rosterMigration.js) before the
@@ -471,6 +475,7 @@ try {
   if (conflicts.length) console.warn(`Roster migration: ${conflicts.length} file(s) already exist at the destination and differ — resolve manually: ${conflicts.join(', ')}`);
   if (skippedInvalid.length) console.warn(`Roster migration: ${skippedInvalid.length} legacy file(s) were not valid roster JSON and were left in place: ${skippedInvalid.join(', ')}`);
   if (errors.length) console.warn(`Roster migration: ${errors.length} file(s) could not be migrated: ${errors.map((e) => `${e.file} (${e.reason})`).join(', ')}`);
+  soccerLineupHistory.initLineupHistoryStorage();
 } catch (err) {
   if (err instanceof PrivateDataConfigError) {
     console.error(err.message);

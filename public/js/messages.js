@@ -1,7 +1,11 @@
 // Rendering chat content into the #messages panel: user/assistant bubbles,
-// Markdown, the empty-chat suggestion cards. Self-contained — takes the data
-// it needs as function arguments rather than importing app state, so it has
-// no dependency on any other module in this app.
+// Markdown, the empty-chat suggestion cards, and (via lineup.js) a soccer
+// lineup's draft/finalize card. Self-contained — takes the data it needs as
+// function arguments rather than importing app state, so it has no
+// dependency on any other module in this app; lineup.js follows the same
+// rule (it reports changes back via a callback instead of importing
+// state.js), so composing it here doesn't break that property.
+import { renderLineupCard } from './lineup.js';
 
 const messagesEl = document.getElementById('messages');
 const input = document.getElementById('input');
@@ -181,8 +185,13 @@ function renderEmptyState() {
 
 // Renders a thread's full message list into #messages, or the empty-state
 // suggestions if it has none yet. `messages` is a thread's own messages
-// array (not read from shared state — see state.js).
-export function renderHistory(messages) {
+// array (not read from shared state — see state.js). `onLineupUpdate`, if
+// given, is called as `onLineupUpdate(message, newLineupMeta)` whenever a
+// lineup card's own action (generate another option / finalize / undo)
+// changes that message's lineup metadata — the caller (state.js) decides
+// how to persist it; omitting the callback still renders the card, it just
+// won't survive a reload.
+export function renderHistory(messages, { onLineupUpdate } = {}) {
   messagesEl.innerHTML = '';
   if (messages.length === 0) {
     renderEmptyState();
@@ -193,6 +202,11 @@ export function renderHistory(messages) {
     if (m.role === 'assistant') {
       renderAssistantText(bubble, m.content);
       renderExportChip(bubble, m.export);
+      if (m.lineup) {
+        renderLineupCard(bubble, m.lineup, {
+          onUpdate: (newMeta) => onLineupUpdate && onLineupUpdate(m, newMeta),
+        });
+      }
     } else {
       renderUserContent(bubble, m.content);
     }
