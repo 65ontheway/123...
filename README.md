@@ -319,6 +319,30 @@ how strongly rotation history influences that one regeneration — it never
 loosens the suitability tolerance or any hard constraint, and it never
 changes your saved defaults.
 
+**Position continuity within a game:** rotation history operates *across*
+games, but *within* one game the scheduler avoids needless reshuffling.
+If a player plays the same broad role (defender, or midfielder) in two
+quarters in a row, they stay at the exact same spot for the second one —
+left back both quarters rather than left back then right back, left wing
+both quarters rather than left wing then center mid — instead of getting
+moved to a different position in that same role just because a
+marginally different arrangement scored slightly higher. This is a
+deliberate trade-off: staying comfortable at one spot matters more than a
+small skill gain from reshuffling, even if it means a very slightly less
+optimal lineup. It only ever applies to a role that stays the same
+between the two quarters (a player switching from defense to midfield, or
+sitting out a quarter in between, isn't "two quarters in a row" and is
+left alone), and it never overrides an explicit pin.
+
+**Goalkeeper substitutions:** the goalkeeper for quarters 1 and 3 can come
+from anywhere, but the quarter 2 and quarter 4 goalkeeper is generally
+drawn from whoever wasn't on the field (resting or benched) the quarter
+before — so there's a full quarter's notice to warm them up before they
+go in, rather than a switch straight from playing another position. Like
+every other rotation preference, this is a bias among already-suitable,
+already-fairness-eligible candidates, never a rule that overrides
+availability, fairness, or a pin.
+
 ### Drafts, alternatives, and finalizing a lineup
 
 Every generated lineup is saved immediately as a **draft**, with a short
@@ -330,7 +354,12 @@ workflow is:
    request) creates one.
 2. **Generate another option**, as many times as you like — a fresh seed,
    the same roster/constraints/settings/history the game started with. None
-   of these count toward rotation history until one is finalized.
+   of these count toward rotation history until one is finalized. You can
+   also add a specific constraint just for this regeneration in the same
+   request — "give me another one, but make sure Emma plays defense at
+   some point" — which layers on top of the game's existing constraints
+   for that one option only, without changing anything you'd already set
+   for the game or any saved default.
 3. **Mark the chosen lineup "used" / "finalize" it** — "use this lineup,"
    "that's the one for Saturday," "lock it in." Only now does it start
    influencing future rotation.
@@ -747,7 +776,22 @@ suite is fictional. Coverage includes:
   left to choose between); and a player with heavy recent role/position
   history is picked into that role measurably less often than an otherwise
   identical, history-free teammate, without ever being penalized below a
-  neutral score for time spent on the bench.
+  neutral score for time spent on the bench; a player who plays the same
+  broad role two quarters in a row always keeps the exact same position;
+  and — using a fixture engineered so two equally-suited keepers are tied
+  in quarters played but differ in whether they were on the field the
+  quarter before — the Q4 goalkeeper is drawn from whoever was off the
+  field far more often than not, while Q3 (deliberately excluded from that
+  preference) shows no such bias at all under the identical kind of tie.
+- `test/soccerPositionContinuity.test.js` — the intra-game position-
+  continuity module in isolation: a same-role scramble (within defense, or
+  within midfield) across two consecutive quarters is restored to last
+  quarter's exact positions, including a three-way cycle; a ROLE CHANGE
+  between quarters is never corrected (continuity only ever applies to a
+  role staying the same); an exact or generic pin is never displaced in
+  either direction; a brand-new player or one who rested/was benched last
+  quarter has no continuity claim; and forward/goalkeeper slots are never
+  touched by it.
 - `test/soccerLineupHistory.test.js` — the private draft/game storage layer:
   a created draft's stored result matches what `computeGameLineup` produces
   for its recorded seed; reopening or listing a saved game never calls

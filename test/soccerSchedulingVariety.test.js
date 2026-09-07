@@ -209,6 +209,116 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
     assert.strictEqual(rotationStats.rotationScoreFor(heavilyBenched.id, 'midfielder', 'center_mid', stats), 0);
   });
 
+  await t.test('a player who plays the same broad role (defender or midfielder) two quarters in a row keeps the exact same position', () => {
+    const { roster } = buildRoster();
+    for (let i = 0; i < 20; i++) {
+      const result = soccerLineup.computeGameLineup(roster, { seed: `continuity-integration-${i}` });
+      for (let qi = 1; qi < result.quarters.length; qi++) {
+        const previousByPlayerId = new Map();
+        for (const s of result.quarters[qi - 1].lineup) {
+          if (s.player && (s.role === 'defender' || s.role === 'midfielder')) {
+            previousByPlayerId.set(s.player.id, { role: s.role, position: s.position });
+          }
+        }
+        for (const s of result.quarters[qi].lineup) {
+          if (!s.player) continue;
+          const previous = previousByPlayerId.get(s.player.id);
+          if (previous && previous.role === s.role) {
+            assert.strictEqual(
+              s.position,
+              previous.position,
+              `seed ${i} Q${qi + 1}: ${s.player.name} played ${previous.role} last quarter too — must stay at ${previous.position}`
+            );
+          }
+        }
+      }
+    }
+  });
+
+  await t.test('the Q4 goalkeeper is drawn from whoever was off the field in Q3 far more often than whoever was already playing, when both are tied and suitable', () => {
+    // Two capable keepers (goalie 5), six fungible fillers (goalie 1, decent
+    // outfield) — exact pins/rests through Q1-Q3 deliberately engineer a
+    // tie in total quarters played going into Q4 between the two keepers,
+    // while keeper A was ON the field in Q3 and keeper B was OFF it, so Q4
+    // is the only quarter left for the seed to decide between them.
+    const roster = { formation: '2-3-1', players: [] };
+    const gkA = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper A', offense: 1, defense: 1, goalie: 5 });
+    const gkB = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper B', offense: 1, defense: 1, goalie: 5 });
+    for (let i = 0; i < 6; i++) {
+      soccerLineup.addPlayerDirect(roster, { name: `Fixture Filler ${i}`, offense: 3, defense: 3, goalie: 1 });
+    }
+    const constraints = {
+      pinned: {
+        1: { [gkA.id]: 'goalkeeper', [gkB.id]: 'left_back' },
+        2: { [gkB.id]: 'left_back' },
+        3: { [gkA.id]: 'right_back' },
+      },
+      resting: {
+        2: [gkA.id],
+        3: [gkB.id],
+      },
+    };
+    let aCount = 0;
+    let bCount = 0;
+    for (let i = 0; i < 60; i++) {
+      const result = soccerLineup.computeGameLineup(roster, { seed: `q4-goalkeeper-seed-${i}`, ...constraints });
+      const q3 = result.quarters[2];
+      const aPlayedQ3 = q3.lineup.some((s) => s.player && s.player.id === gkA.id);
+      const bPlayedQ3 = q3.lineup.some((s) => s.player && s.player.id === gkB.id);
+      assert.ok(aPlayedQ3 && !bPlayedQ3, `seed ${i}: fixture setup expected A on the field and B off it in Q3`);
+      const q4Goalkeeper = result.quarters[3].lineup.find((s) => s.position === 'goalkeeper').player;
+      if (q4Goalkeeper.id === gkA.id) aCount += 1;
+      if (q4Goalkeeper.id === gkB.id) bCount += 1;
+    }
+    assert.strictEqual(aCount + bCount, 60, 'the Q4 goalkeeper should always be one of the two capable keepers in this fixture');
+    assert.ok(bCount > aCount * 2, `expected keeper B (off the field in Q3) to be picked far more often (A=${aCount}, B=${bCount})`);
+  });
+
+  await t.test('Q3\'s goalkeeper shows no bench-preference bias, even given the exact same kind of tie the Q4 test uses', () => {
+    // Mirrors the Q4 fixture one quarter earlier: keeper A plays Q1 while
+    // keeper B rests it (off the field), then keeper A rests Q2 while B
+    // plays it — both end tied at 1 quarter played going into Q3, with A
+    // off the field in Q2 and B on it. Exactly one keeper rests each
+    // quarter (never both), so the six fillers always fill the other six
+    // slots completely and stay tied with each other at or above the
+    // keepers' count — no filler ever dips below and hijacks the
+    // goalkeeper slot's fairness tier away from the two keepers.
+    const roster = { formation: '2-3-1', players: [] };
+    const gkA = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper A', offense: 1, defense: 1, goalie: 5 });
+    const gkB = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper B', offense: 1, defense: 1, goalie: 5 });
+    for (let i = 0; i < 6; i++) {
+      soccerLineup.addPlayerDirect(roster, { name: `Fixture Filler ${i}`, offense: 3, defense: 3, goalie: 1 });
+    }
+    const constraints = {
+      pinned: {
+        1: { [gkA.id]: 'goalkeeper' },
+        2: { [gkB.id]: 'left_back' },
+      },
+      resting: {
+        1: [gkB.id],
+        2: [gkA.id],
+      },
+    };
+    let aCount = 0;
+    let bCount = 0;
+    for (let i = 0; i < 60; i++) {
+      const result = soccerLineup.computeGameLineup(roster, { seed: `q3-no-bias-seed-${i}`, ...constraints });
+      const q2 = result.quarters[1];
+      const aPlayedQ2 = q2.lineup.some((s) => s.player && s.player.id === gkA.id);
+      const bPlayedQ2 = q2.lineup.some((s) => s.player && s.player.id === gkB.id);
+      assert.ok(!aPlayedQ2 && bPlayedQ2, `seed ${i}: fixture setup expected A off the field and B on it in Q2`);
+      const q3Goalkeeper = result.quarters[2].lineup.find((s) => s.position === 'goalkeeper').player;
+      if (q3Goalkeeper.id === gkA.id) aCount += 1;
+      if (q3Goalkeeper.id === gkB.id) bCount += 1;
+    }
+    assert.strictEqual(aCount + bCount, 60);
+    // If the bench-preference boost incorrectly applied here, keeper A
+    // (off the field in Q2) would dominate the same way keeper B dominates
+    // the Q4 test above — a roughly even split instead confirms Q3 truly
+    // applies no bench preference at all.
+    assert.ok(aCount > 15 && bCount > 15, `expected a roughly even split with no Q3 bench preference (A=${aCount}, B=${bCount})`);
+  });
+
   t.after(() => {
     require('node:fs').rmSync(process.env.RAYGPT_DATA_DIR, { recursive: true, force: true });
   });

@@ -18,6 +18,11 @@ const { handleSoccerLineupChat } = require('../lib/soccerLineupChat');
 
 let capturedRequests = [];
 let nextResponse = null;
+// For tests that need the tool-decision call to return DIFFERENT responses
+// across successive calls within one handleSoccerLineupChat invocation
+// (e.g. the empty-response retry) — shifted one per stream:false call when
+// non-null; falls back to the single `nextResponse` once exhausted.
+let nextResponseQueue = null;
 
 function makeSseBody(text, usage) {
   const encoder = new TextEncoder();
@@ -42,8 +47,9 @@ function installMockFetch() {
     capturedRequests.push(body);
     const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
     if (body.stream === false) {
-      if (!nextResponse) return new Response(JSON.stringify({ error: { message: 'no mock configured' } }), { status: 500 });
-      const calls = nextResponse.toolCalls || (nextResponse.toolCall ? [nextResponse.toolCall] : null);
+      const current = nextResponseQueue && nextResponseQueue.length > 0 ? nextResponseQueue.shift() : nextResponse;
+      if (!current) return new Response(JSON.stringify({ error: { message: 'no mock configured' } }), { status: 500 });
+      const calls = current.toolCalls || (current.toolCall ? [current.toolCall] : null);
       if (calls) {
         return new Response(
           JSON.stringify({
@@ -66,7 +72,7 @@ function installMockFetch() {
         );
       }
       return new Response(
-        JSON.stringify({ usage, choices: [{ message: { role: 'assistant', content: nextResponse.content, tool_calls: null } }] }),
+        JSON.stringify({ usage, choices: [{ message: { role: 'assistant', content: current.content, tool_calls: null } }] }),
         { status: 200 }
       );
     }
@@ -225,6 +231,83 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     const explainCall = capturedRequests[capturedRequests.length - 1];
     const toolMsg = explainCall.messages.find((m) => m.role === 'tool');
     assert.ok(toolMsg.content.toLowerCase().includes('no saved game'));
+  });
+
+  await t.test('generate_lineup_alternative with an added pinned constraint applies it to just this option, never leaks a name', async () => {
+    const { roster, vega } = seedRoster('chatCoachPin');
+    const created = await history.withLineupLock('chatCoachPin', () => history.createGame('chatCoachPin', roster, {}));
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const label = ctx.labelByPlayerId.get(vega.id);
+
+    nextResponse = {
+      toolCall: {
+        name: 'generate_lineup_alternative',
+        args: { gameId: created.gameId, pinned: { 4: { [label]: 'defender' } } },
+      },
+    };
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Give me another option, but make sure Fixture Vega plays defense at some point.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'chatCoachPin',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assertNoLeaks('generate_lineup_alternative with pinned override');
+    const lineup = res.lineupDelta;
+    assert.strictEqual(lineup.gameId, created.gameId);
+
+    const reopened = history.getGame('chatCoachPin', created.gameId);
+    const draft = reopened.drafts[reopened.selectedDraftId];
+    const q4Defender = draft.result.quarters[3].lineup.some((s) => s.role === 'defender' && s.player && s.player.id === vega.id);
+    assert.ok(q4Defender, 'Vega should have been pinned into a defender slot in Q4');
+    assert.deepStrictEqual(reopened.frozenInputs.constraints.pinned, {}, 'the game\'s frozen constraints must remain untouched by a one-off override');
+  });
+
+  await t.test('an empty first tool-decision response is retried once and succeeds if the retry produces a reply', async () => {
+    seedRoster('chatCoachRetry');
+    capturedRequests = [];
+    nextResponse = null;
+    nextResponseQueue = [{}, { content: 'All good — nothing to schedule right now.' }];
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Some ambiguous message.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'chatCoachRetry',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.fullText.includes('All good'), 'the retried reply should reach the user instead of a dead-end error');
+    const streamFalseCalls = capturedRequests.filter((r) => r.stream === false);
+    assert.strictEqual(streamFalseCalls.length, 2, 'expected exactly one retry (two total tool-decision calls)');
+    nextResponseQueue = null;
+  });
+
+  await t.test('two empty tool-decision responses in a row still surface the existing fallback error, not an infinite retry', async () => {
+    seedRoster('chatCoachRetryFail');
+    capturedRequests = [];
+    nextResponse = null;
+    nextResponseQueue = [{}, {}];
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Some ambiguous message.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'chatCoachRetryFail',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assert.strictEqual(res.statusCode, 502);
+    assert.ok(res.jsonBody.error.includes('did not return a response'));
+    const streamFalseCalls = capturedRequests.filter((r) => r.stream === false);
+    assert.strictEqual(streamFalseCalls.length, 2, 'must retry exactly once, never more');
+    nextResponseQueue = null;
   });
 
   await t.test('finalize_lineup marks the game used, never leaks a name, and the finalized game influences a later draft\'s rotation stats', async () => {
