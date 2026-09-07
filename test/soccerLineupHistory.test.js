@@ -105,6 +105,53 @@ test('soccerLineupHistory.js', async (t) => {
     );
   });
 
+  await t.test('addAlternative applies a one-off constraintOverrides pin for just this attempt, without touching the game\'s frozen constraints', async () => {
+    const { roster, players } = seedRoster('lhCoachConstraint');
+    const midA = players.find((p) => p.name === 'Fixture Mid A');
+    const created = await history.withLineupLock('lhCoachConstraint', () => history.createGame('lhCoachConstraint', roster, {}));
+    assert.deepStrictEqual(created.frozenInputs.constraints.pinned, {}, 'sanity check: no pins on the original game');
+
+    const { game: afterAlt } = await history.withLineupLock('lhCoachConstraint', () =>
+      history.addAlternative('lhCoachConstraint', created.gameId, {
+        constraintOverrides: { pinned: { 4: { [midA.id]: 'defender' } } },
+      })
+    );
+    const draft = afterAlt.drafts[afterAlt.selectedDraftId];
+    const q4Defender = draft.result.quarters[3].lineup.find((s) => s.role === 'defender' && s.playerId === midA.id);
+    assert.ok(q4Defender, 'the override pin should have placed Mid A into a defender slot in Q4');
+    assert.deepStrictEqual(afterAlt.frozenInputs.constraints.pinned, {}, 'the game\'s FROZEN constraints must stay untouched by a one-off override');
+    assert.deepStrictEqual(draft.constraintOverrides, { pinned: { 4: { [midA.id]: 'defender' } } }, 'the draft should record which override it actually used, for transparency');
+  });
+
+  await t.test('addAlternative constraintOverrides are one-off, not sticky: the next plain "another option" call reverts to the frozen constraints', async () => {
+    const { roster, players } = seedRoster('lhCoachConstraintB');
+    const midA = players.find((p) => p.name === 'Fixture Mid A');
+    const created = await history.withLineupLock('lhCoachConstraintB', () => history.createGame('lhCoachConstraintB', roster, {}));
+    await history.withLineupLock('lhCoachConstraintB', () =>
+      history.addAlternative('lhCoachConstraintB', created.gameId, { constraintOverrides: { pinned: { 1: { [midA.id]: 'goalkeeper' } } } })
+    );
+    const { game: plainAlt } = await history.withLineupLock('lhCoachConstraintB', () => history.addAlternative('lhCoachConstraintB', created.gameId, {}));
+    const plainDraft = plainAlt.drafts[plainAlt.selectedDraftId];
+    assert.strictEqual(plainDraft.constraintOverrides, undefined, 'a plain follow-up call must carry no leftover override');
+    assert.deepStrictEqual(plainAlt.frozenInputs.constraints.pinned, {}, 'the game\'s frozen constraints must still be untouched');
+  });
+
+  await t.test('addAlternative constraintOverrides.resting is additive to (not a replacement of) the game\'s existing resting constraint', async () => {
+    const { roster, players } = seedRoster('lhCoachConstraintC');
+    const fwdA = players.find((p) => p.name === 'Fixture Fwd A');
+    const midC = players.find((p) => p.name === 'Fixture Mid C');
+    const created = await history.withLineupLock('lhCoachConstraintC', () =>
+      history.createGame('lhCoachConstraintC', roster, { resting: { 1: [fwdA.id] } })
+    );
+    const { game: afterAlt } = await history.withLineupLock('lhCoachConstraintC', () =>
+      history.addAlternative('lhCoachConstraintC', created.gameId, { constraintOverrides: { resting: { 1: [midC.id] } } })
+    );
+    const draft = afterAlt.drafts[afterAlt.selectedDraftId];
+    const q1Playing = new Set(draft.result.quarters[0].lineup.filter((s) => s.playerId).map((s) => s.playerId));
+    assert.ok(!q1Playing.has(fwdA.id), 'the game\'s original resting constraint must still apply');
+    assert.ok(!q1Playing.has(midC.id), 'the override\'s additional resting constraint must also apply');
+  });
+
   await t.test('addAlternative on an already-finalized game reverts it to draft (an unreviewed option never silently counts as played)', async () => {
     const { roster } = seedRoster('lhCoachE');
     const created = await history.withLineupLock('lhCoachE', () => history.createGame('lhCoachE', roster, {}));
