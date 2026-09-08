@@ -275,14 +275,18 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
   });
 
   await t.test('Q3\'s goalkeeper shows no bench-preference bias, even given the exact same kind of tie the Q4 test uses', () => {
-    // Mirrors the Q4 fixture one quarter earlier: keeper A plays Q1 while
-    // keeper B rests it (off the field), then keeper A rests Q2 while B
-    // plays it — both end tied at 1 quarter played going into Q3, with A
-    // off the field in Q2 and B on it. Exactly one keeper rests each
-    // quarter (never both), so the six fillers always fill the other six
-    // slots completely and stay tied with each other at or above the
-    // keepers' count — no filler ever dips below and hijacks the
-    // goalkeeper slot's fairness tier away from the two keepers.
+    // Mirrors the Q4 fixture one quarter earlier: keeper A plays OUTFIELD
+    // in Q1 while keeper B rests it (off the field), then keeper A rests
+    // Q2 while B plays outfield — both end tied at 1 quarter played going
+    // into Q3, with A off the field in Q2 and B on it, and — importantly —
+    // NEITHER has played goalkeeper yet (both pinned to left_back, an
+    // outfield slot), so the separate "don't repeat a goalkeeper" default
+    // never enters into this comparison; some filler ends up as Q1/Q2's
+    // goalkeeper instead. Exactly one keeper rests each quarter (never
+    // both), so the six fillers always fill the other six slots completely
+    // and stay tied with each other at or above the keepers' count — no
+    // filler ever dips below and hijacks the goalkeeper slot's fairness
+    // tier away from the two keepers.
     const roster = { formation: '2-3-1', players: [] };
     const gkA = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper A', offense: 1, defense: 1, goalie: 5 });
     const gkB = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper B', offense: 1, defense: 1, goalie: 5 });
@@ -291,7 +295,7 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
     }
     const constraints = {
       pinned: {
-        1: { [gkA.id]: 'goalkeeper' },
+        1: { [gkA.id]: 'left_back' },
         2: { [gkB.id]: 'left_back' },
       },
       resting: {
@@ -317,6 +321,103 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
     // the Q4 test above — a roughly even split instead confirms Q3 truly
     // applies no bench preference at all.
     assert.ok(aCount > 15 && bCount > 15, `expected a roughly even split with no Q3 bench preference (A=${aCount}, B=${bCount})`);
+  });
+
+  await t.test('no player plays goalkeeper more than once per game when enough suitable candidates exist', () => {
+    // 5 equally capable keepers (more than the 4 quarters in a game) —
+    // also clearly the better outfield players, so they're never the ones
+    // naturally benched — plus 3 weaker fillers who absorb all the bench
+    // rotation instead. With this much slack, the default should always
+    // find a fresh goalkeeper each quarter, never repeating one.
+    const roster = { formation: '2-3-1', players: [] };
+    for (let i = 0; i < 5; i++) {
+      soccerLineup.addPlayerDirect(roster, { name: `Fixture Keeper ${i}`, offense: 3, defense: 3, goalie: 5 });
+    }
+    for (let i = 0; i < 3; i++) {
+      soccerLineup.addPlayerDirect(roster, { name: `Fixture Filler ${i}`, offense: 1, defense: 1, goalie: 1 });
+    }
+    for (let i = 0; i < 30; i++) {
+      const result = soccerLineup.computeGameLineup(roster, { seed: `no-repeat-gk-seed-${i}` });
+      const goalkeepersUsed = result.quarters.map((q) => q.lineup.find((s) => s.position === 'goalkeeper').player.id);
+      assert.strictEqual(
+        new Set(goalkeepersUsed).size,
+        4,
+        `seed ${i}: expected 4 distinct goalkeepers across the game, got ${JSON.stringify(goalkeepersUsed)}`
+      );
+    }
+  });
+
+  await t.test('a single viable goalkeeper is reused every quarter (unavoidable), with a warning explaining why', () => {
+    // The shared buildRoster() fixture has exactly one standout keeper —
+    // repeating them every quarter is the only option, and must never be
+    // blocked or force a wildly unsuited player into goal instead.
+    const { roster, players } = buildRoster();
+    const keeper = players.find((p) => p.name === 'Fixture Keeper');
+    const result = soccerLineup.computeGameLineup(roster, { seed: 'single-keeper-seed' });
+    for (const q of result.quarters) {
+      const gk = q.lineup.find((s) => s.position === 'goalkeeper').player;
+      assert.strictEqual(gk.id, keeper.id, `Q${q.quarter}: the only suitable keeper must still play goalkeeper`);
+    }
+    assert.ok(
+      result.warnings.some((w) => w.includes('no other suitable goalkeeper') || w.includes('unavoidable')),
+      `expected a warning explaining the repeated goalkeeper, got: ${JSON.stringify(result.warnings)}`
+    );
+  });
+
+  await t.test('an explicit pin can reuse the same goalkeeper across quarters without any warning — "unless I say otherwise"', () => {
+    const roster = { formation: '2-3-1', players: [] };
+    const gk1 = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper 1', offense: 2, defense: 2, goalie: 5 });
+    soccerLineup.addPlayerDirect(roster, { name: 'Fixture Keeper 2', offense: 2, defense: 2, goalie: 5 });
+    for (let i = 0; i < 6; i++) {
+      soccerLineup.addPlayerDirect(roster, { name: `Fixture Filler ${i}`, offense: 3, defense: 3, goalie: 1 });
+    }
+    const result = soccerLineup.computeGameLineup(roster, {
+      seed: 'explicit-pin-repeat-seed',
+      pinned: { 1: { [gk1.id]: 'goalkeeper' }, 2: { [gk1.id]: 'goalkeeper' } },
+    });
+    assert.strictEqual(result.quarters[0].lineup.find((s) => s.position === 'goalkeeper').player.id, gk1.id);
+    assert.strictEqual(result.quarters[1].lineup.find((s) => s.position === 'goalkeeper').player.id, gk1.id);
+    assert.ok(
+      !result.warnings.some((w) => w.includes('goalkeeper')),
+      `an explicit pin reusing a goalkeeper must never produce a warning, got: ${JSON.stringify(result.warnings)}`
+    );
+  });
+
+  await t.test('a player who has already played goalkeeper is rarely left to sit out a second quarter', () => {
+    // Two equally capable keepers, six fungible fillers with the SAME
+    // outfield suitability as the keepers — everyone is fully
+    // interchangeable outside of goalkeeper skill, so nothing but the
+    // fairness/bench-avoidance machinery decides who sits. With 8 players
+    // for 7 slots, only one bench quarter exists per quarter (4 total
+    // across the game) — the bench-avoidance boost should keep that from
+    // ever landing twice on the same former goalkeeper in the large
+    // majority of games.
+    const roster = { formation: '2-3-1', players: [] };
+    const keeperIds = [];
+    for (let i = 0; i < 2; i++) {
+      const p = soccerLineup.addPlayerDirect(roster, { name: `Fixture Keeper ${i}`, offense: 2, defense: 2, goalie: 5 });
+      keeperIds.push(p.id);
+    }
+    for (let i = 0; i < 6; i++) {
+      soccerLineup.addPlayerDirect(roster, { name: `Fixture Filler ${i}`, offense: 2, defense: 2, goalie: 1 });
+    }
+    let doubleBenchedCount = 0;
+    const trials = 60;
+    for (let i = 0; i < trials; i++) {
+      const result = soccerLineup.computeGameLineup(roster, { seed: `second-bench-seed-${i}` });
+      const goalkeepersUsed = new Set(result.quarters.map((q) => q.lineup.find((s) => s.position === 'goalkeeper').player.id));
+      const benchCounts = new Map();
+      for (const q of result.quarters) {
+        for (const p of q.bench) benchCounts.set(p.id, (benchCounts.get(p.id) || 0) + 1);
+      }
+      for (const id of goalkeepersUsed) {
+        if ((benchCounts.get(id) || 0) >= 2) doubleBenchedCount += 1;
+      }
+    }
+    assert.ok(
+      doubleBenchedCount <= trials * 0.1,
+      `expected a former goalkeeper to rarely sit out two quarters (happened in ${doubleBenchedCount}/${trials} trials)`
+    );
   });
 
   t.after(() => {
