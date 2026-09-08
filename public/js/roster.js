@@ -1,3 +1,4 @@
+import { apiFetch } from './api.js';
 // The Soccer Lineup agent's roster panel: shown/hidden based on the
 // sidebar's agent picker, and entirely self-contained — it owns its own
 // DOM elements and listeners per CLAUDE.md's module-ownership convention,
@@ -27,6 +28,9 @@ const prefSelects = {
 const SOCCER_AGENT_ID = 'soccer-lineup';
 let currentRoster = null;
 let editingPlayerId = null;
+let adding = false;
+statusEl.setAttribute('role', 'status');
+statusEl.setAttribute('aria-live', 'polite');
 
 function showStatus(text, kind) {
   statusEl.textContent = text;
@@ -42,12 +46,16 @@ function updateTriggerVisibility() {
 agentSelect.addEventListener('change', updateTriggerVisibility);
 
 function openPanel() {
+  panel.inert = false;
   panel.classList.add('open');
   backdrop.classList.add('open');
+  closeBtn.focus();
   loadRoster();
 }
 function closePanel() {
+  panel.inert = true;
   panel.classList.remove('open');
+  panelBtn.focus();
   backdrop.classList.remove('open');
   editingPlayerId = null;
 }
@@ -55,6 +63,12 @@ panelBtn.addEventListener('click', openPanel);
 closeBtn.addEventListener('click', closePanel);
 backdrop.addEventListener('click', closePanel);
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && panel.classList.contains('open')) {
+    const elements = [...panel.querySelectorAll('button, input, select, [tabindex="0"]')].filter(el => !el.disabled && el.getClientRects().length);
+    const first = elements[0], last = elements.at(-1);
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+  }
   if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
 });
 
@@ -183,7 +197,7 @@ async function loadRoster() {
   showStatus('Loading roster…', null);
   listEl.innerHTML = '';
   try {
-    const res = await fetch('/api/soccer/roster');
+    const res = await apiFetch('/api/soccer/roster');
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -217,7 +231,7 @@ function renderSidePreferences() {
 async function saveSidePreference(role, value) {
   showStatus('Saving…', null);
   try {
-    const res = await fetch('/api/soccer/roster/settings', {
+    const res = await apiFetch('/api/soccer/roster/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [role]: value }),
@@ -246,7 +260,7 @@ async function deletePlayer(player) {
   if (!window.confirm(`Remove ${player.name} from the roster? This can't be undone.`)) return;
   showStatus('Removing…', null);
   try {
-    const res = await fetch(`/api/soccer/roster/players/${encodeURIComponent(player.id)}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/soccer/roster/players/${encodeURIComponent(player.id)}`, { method: 'DELETE' });
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -267,7 +281,7 @@ async function deletePlayer(player) {
 async function savePlayerEdit(player, fields) {
   showStatus('Saving…', null);
   try {
-    const res = await fetch(`/api/soccer/roster/players/${encodeURIComponent(player.id)}`, {
+    const res = await apiFetch(`/api/soccer/roster/players/${encodeURIComponent(player.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),
@@ -293,11 +307,15 @@ async function savePlayerEdit(player, fields) {
 
 addForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (adding) return;
   const name = addNameInput.value.trim();
   if (!name) return;
+  adding = true;
+  const submit = addForm.querySelector('[type=submit]');
+  submit.disabled = true;
   showStatus('Saving…', null);
   try {
-    const res = await fetch('/api/soccer/roster/players', {
+    const res = await apiFetch('/api/soccer/roster/players', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -326,7 +344,7 @@ addForm.addEventListener('submit', async (e) => {
     renderList();
   } catch {
     showStatus('Could not reach the server.', 'error');
-  }
+  } finally { adding = false; submit.disabled = false; }
 });
 
 updateTriggerVisibility();

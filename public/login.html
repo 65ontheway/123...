@@ -153,45 +153,11 @@
       <input id="username" name="username" type="text" autocomplete="username" required autofocus />
       <label for="password">Password</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required />
-      <div class="error" id="error"></div>
+      <div class="error" id="error" role="alert"></div>
       <button type="submit" id="submit-btn">Log In</button>
     </form>
   </div>
 
-  <script>
-    const form = document.getElementById('login-form');
-    const errorEl = document.getElementById('error');
-    const submitBtn = document.getElementById('submit-btn');
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      errorEl.textContent = '';
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Signing in...';
-
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-
-      try {
-        const res = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password }),
-        });
-        const data = await res.json();
-
-        if (res.ok && data.ok) {
-          window.location.href = '/chat';
-          return;
-        }
-        errorEl.textContent = data.error || 'Invalid username or password.';
-      } catch (err) {
-        errorEl.textContent = 'Could not reach the server. Please try again.';
-      } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Log In';
-      }
-    });
-  </script>
+  <script src="/js/login.js" defer></script>
 </body>
 </html>

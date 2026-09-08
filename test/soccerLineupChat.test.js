@@ -10,11 +10,25 @@ const path = require('node:path');
 const os = require('node:os');
 
 process.env.RAYGPT_DATA_DIR = path.join(os.tmpdir(), 'raygpt-test-lineup-chat-' + process.pid);
+process.env.RAYGPT_LEGACY_ROSTER_DIR = path.join(process.env.RAYGPT_DATA_DIR, 'isolated-legacy');
 
 const soccerLineup = require('../lib/soccerLineup');
 const soccerPrivacy = require('../lib/soccerPrivacy');
 const history = require('../lib/soccerLineupHistory');
-const { handleSoccerLineupChat } = require('../lib/soccerLineupChat');
+const { handleSoccerLineupChat: runChat } = require('../lib/soccerLineupChat');
+// These workflow tests explicitly accept the returned, one-use proposal.
+// Separate security tests assert that unconfirmed/wrong-owner actions never run.
+async function handleSoccerLineupChat(res, options) {
+  const calls = nextResponse?.toolCalls || [nextResponse?.toolCall].filter(Boolean);
+  const gameId = calls.find(call => call.args?.gameId)?.args.gameId;
+  await runChat(res, { ...options, ownerId: options.username, gameId });
+  for (const line of res.fullText.split('\n')) {
+    if (!line.startsWith('data: {')) continue;
+    const confirmation = JSON.parse(line.slice(6)).choices?.[0]?.delta?.confirmation;
+    if (confirmation) await require('../lib/confirmations').confirm({ params: { id: confirmation.id }, session: { ownerId: options.username } }, res, err => { throw err; });
+  }
+}
+
 
 let capturedRequests = [];
 let nextResponse = null;
@@ -170,7 +184,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     nextResponse = { toolCall: { name: 'set_game_lineup', args: { date: '2024-09-01' } } };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Set up a lineup for Fixture Nova and the team on Saturday.' }],
+      upstreamMessages: [{ role: 'user', content: 'Create a lineup for Saturday; Rest Fixture Nova in Q1.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -197,7 +211,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     nextResponse = { toolCall: { name: 'generate_lineup_alternative', args: { gameId: created.gameId } } };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Give me another option with the same constraints.' }],
+      upstreamMessages: [{ role: 'user', content: 'Give me another option.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -228,9 +242,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
       session: {},
     });
     assert.strictEqual(res.lineupDelta, null, 'no lineup metadata should be attached when the game could not be resolved');
-    const explainCall = capturedRequests[capturedRequests.length - 1];
-    const toolMsg = explainCall.messages.find((m) => m.role === 'tool');
-    assert.ok(toolMsg.content.toLowerCase().includes('no saved game'));
+    assert.ok(res.fullText.toLowerCase().includes('no saved game'));
   });
 
   await t.test('generate_lineup_alternative with an added pinned constraint applies it to just this option, never leaks a name', async () => {
@@ -247,7 +259,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Give me another option, but make sure Fixture Vega plays defense at some point.' }],
+      upstreamMessages: [{ role: 'user', content: 'Give me another option; Put Fixture Vega in defense in Q4.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -273,7 +285,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     nextResponseQueue = [{}, { content: 'All good — nothing to schedule right now.' }];
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Some ambiguous message.' }],
+      upstreamMessages: [{ role: 'user', content: 'Hello.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -295,7 +307,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     nextResponseQueue = [{}, {}];
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Some ambiguous message.' }],
+      upstreamMessages: [{ role: 'user', content: 'Hello.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -317,7 +329,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     nextResponse = { toolCall: { name: 'finalize_lineup', args: { gameId: created.gameId } } };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Use this lineup for Saturday.' }],
+      upstreamMessages: [{ role: 'user', content: 'Use this lineup.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -351,9 +363,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
       appUrl: 'http://localhost',
       session: {},
     });
-    const explainCall = capturedRequests[capturedRequests.length - 1];
-    const toolMsg = explainCall.messages.find((m) => m.role === 'tool');
-    assert.ok(toolMsg.content.includes('already marked used'));
+    assert.ok(res.fullText.includes('already marked used'));
   });
 
   await t.test('a "rotate positions more" request sets rotateMore and never leaks a name', async () => {
@@ -387,7 +397,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Use this lineup, and also set up next week\'s game.' }],
+      upstreamMessages: [{ role: 'user', content: 'Use this lineup; Create a lineup for 2024-09-15.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -399,9 +409,8 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     // Two tool calls in one turn -> lineupMeta is overwritten by the LAST one processed (the new game), per soccerLineupChat.js's own documented behavior.
     const lineup = res.lineupDelta;
     assert.notStrictEqual(lineup.gameId, created.gameId, 'the most recent tool call touched should be what the card reflects');
-    const explainCall = capturedRequests[capturedRequests.length - 1];
-    const toolMessages = explainCall.messages.filter((m) => m.role === 'tool');
-    assert.strictEqual(toolMessages.length, 2, 'both tool calls must produce a result, not just the first');
+    assert.strictEqual(history.listGames('chatCoachG').length, 2, 'both actions must run');
+    assert.strictEqual(history.getGame('chatCoachG', created.gameId).status, 'finalized');
   });
 
   await t.test('a plain question with no action needed makes no lineup-history writes and carries no delta.lineup', async () => {

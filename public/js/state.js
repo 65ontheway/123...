@@ -1,11 +1,13 @@
+import { apiFetch } from './api.js';
+import { readHistory, writeHistory } from './historyStore.js';
 // Conversation thread data: localStorage persistence, the active thread,
 // and thread lifecycle (create/switch/delete). Owns the one piece of data
 // every other module ultimately reads or mutates, so it also orchestrates
-// the re-renders a thread change needs — see the note in sidebar.js about
-// the mutual import with that module.
+// UI events let subscribers update without importing the sidebar.
 import { renderHistory } from './messages.js';
-import { renderThreadList, closeSidebarOnMobile } from './sidebar.js';
-import { handleImageCapabilityChange } from './attachments.js';
+const renderThreadList = () => window.dispatchEvent(new Event('thread-list-change'));
+const closeSidebarOnMobile = () => window.dispatchEvent(new Event('sidebar-close'));
+const handleImageCapabilityChange = () => window.dispatchEvent(new Event('model-capability-change'));
 
 const modelSelect = document.getElementById('model-select');
 const input = document.getElementById('input');
@@ -13,29 +15,9 @@ const input = document.getElementById('input');
 // Threads persist in this browser via localStorage (no server-side
 // storage). Each thread keeps its own messages and the model last used
 // with it.
-const STORAGE_KEY = 'raygpt.threads.v1';
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { threads: [], activeId: null };
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.threads) ? parsed : { threads: [], activeId: null };
-  } catch {
-    return { threads: [], activeId: null };
-  }
-}
-
-export const state = loadState();
-
-export function saveState() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // localStorage unavailable (private browsing, quota, etc.) — chat
-    // still works this session, it just won't persist across reloads.
-  }
-}
+export const state = { threads: [], activeId: null };
+export function loadAccountHistory() { Object.assign(state, readHistory()); }
+export function saveState() { writeHistory(state); }
 
 export function getActiveThread() {
   return state.threads.find((t) => t.id === state.activeId) || null;
@@ -68,15 +50,16 @@ export function makeThreadTitle(text) {
 export async function maybeGenerateTitle(thread, userText, assistantText, agent) {
   if (!thread || thread.titleGenerated || thread.messages.length !== 2) return;
   thread.titleGenerated = true;
+  if (thread.agent === 'soccer-lineup') { thread.title = 'Soccer lineup'; saveState(); renderThreadList(); return; }
   try {
-    const res = await fetch('/api/generate-title', {
+    const res = await apiFetch('/api/generate-title', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // `agent` tells the server whether this thread needs soccer-roster
       // name scrubbing before its title-generation call — omitting it
       // would silently skip that scrubbing (see server.js's
       // /api/generate-title handler).
-      body: JSON.stringify({ userMessage: userText, assistantMessage: assistantText, agent }),
+      body: JSON.stringify({ userMessage: userText.slice(0, 500), assistantMessage: assistantText.slice(0, 500), agent: thread.agent, conversationId: thread.id }),
     });
     const data = await res.json().catch(() => ({}));
     if (data.ok && data.title) {
@@ -99,6 +82,10 @@ export function touchActiveThread() {
 }
 
 function applyThreadModel(thread) {
+  const agentSelect = document.getElementById('agent-select');
+  agentSelect.value = thread.agent || 'soccer-lineup';
+  thread.agent = agentSelect.value;
+  agentSelect.dispatchEvent(new Event('change'));
   if (thread.model && [...modelSelect.options].some((o) => o.value === thread.model)) {
     modelSelect.value = thread.model;
   }
@@ -137,6 +124,7 @@ export function createThread() {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
     title: '',
     model: modelSelect.value || '',
+    agent: document.getElementById('agent-select').value || 'default',
     messages: [],
     updatedAt: Date.now(),
     titleGenerated: false, // flips true after the one-shot title generation call, success or fail

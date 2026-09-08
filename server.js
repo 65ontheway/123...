@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
 
 const fs = require('fs');
 const path = require('path');
@@ -13,27 +13,34 @@ const exportChat = require('./lib/exportChat');
 const auth = require('./lib/auth');
 const { addUsage } = require('./lib/tokenUsage');
 const soccerPrivacy = require('./lib/soccerPrivacy');
-const { PrivateDataConfigError } = require('./lib/privateData');
 const soccerRosterRoutes = require('./lib/soccerRosterRoutes');
 const soccerLineupRoutes = require('./lib/soccerLineupRoutes');
 const soccerLineupHistory = require('./lib/soccerLineupHistory');
 
+const { safeguards, loginLimit } = require('./lib/security');
+const { providerFetch, requestScope } = require('./lib/provider');
+const { bindConversation } = require('./lib/conversationPolicy');
+const { operations } = require('./lib/operations');
+const { validateMessages } = require('./lib/validation');
 const app = express();
+app.disable('x-powered-by');
+if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY.split(',').map(x => x.trim()));
+app.use(safeguards);
 const PORT = process.env.PORT || 3000;
 
-// Default 100kb body limit is too small once messages can carry base64-encoded
-// images and PDFs; images are downscaled client-side first, but a multi-turn
-// thread resends its whole history (including past attachments) on every request.
-app.use(express.json({ limit: '30mb' }));
+// Keep attachment-bearing chat/export requests separate from small control bodies.
+const smallJson = express.json({ limit: '16kb' });
+const chatJson = express.json({ limit: '3mb' });
+app.use((req, res, next) => (['/api/chat', '/api/export'].includes(req.path) ? chatJson : smallJson)(req, res, next));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'dev-only-secret-change-me',
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: 'auto',
       maxAge: 1000 * 60 * 60 * 4, // 4 hours
     },
   })
@@ -76,10 +83,8 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3.8-27b';
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
 
-// Response length is chosen per-message from the sidebar rather than fixed
-// server-side. "long" sends no max_tokens at all (bounded only by the
-// model's own limit) rather than some arbitrarily large number.
-const RESPONSE_LENGTH_TOKENS = { short: 500, medium: 1000, long: null };
+// Every response length has an explicit output cap, including Long.
+const RESPONSE_LENGTH_TOKENS = { short: 500, medium: 1000, long: 4000 };
 const DEFAULT_RESPONSE_LENGTH = 'medium';
 
 // General Assistant is the plain passthrough chat flow. Soccer Lineup is a
@@ -141,7 +146,7 @@ async function getLiveModelCatalog() {
 // A standing set of facts always included as a system message, independent of
 // which model is selected. Re-read whenever the file's mtime changes, so edits
 // take effect without restarting the server.
-const FACTS_FILE = path.join(__dirname, process.env.FACTS_FILE || 'facts.md');
+const FACTS_FILE = path.resolve(__dirname, process.env.FACTS_FILE || 'facts.md');
 let factsCache = { content: '', mtimeMs: 0 };
 
 function loadFacts() {
@@ -156,67 +161,67 @@ function loadFacts() {
   return factsCache.content;
 }
 
-function requireAuth(req, res, next) {
-  if (req.session && req.session.loggedIn) return next();
-  return res.status(401).json({ ok: false, error: 'Not authenticated' });
-}
+const { requireAuth } = auth;
 
 app.get('/', (req, res) => {
-  if (req.session && req.session.loggedIn) return res.redirect('/chat');
+  if (auth.isAuthenticated(req)) return res.redirect('/chat');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body || {};
-  const expectedUser = process.env.APP_USERNAME || 'admin';
-
-  const valid =
-    typeof username === 'string' &&
-    typeof password === 'string' &&
-    auth.credentialsMatch(username, expectedUser) &&
-    auth.verifyPassword(password);
-
-  if (!valid) {
-    return res.status(401).json({ ok: false, error: 'Invalid username or password.' });
-  }
-
-  req.session.loggedIn = true;
-  req.session.username = username;
-  res.json({ ok: true });
+app.post('/api/login', loginLimit, async (req, res, next) => {
+  try {
+    const { username, password } = req.body || {};
+    const before = auth.identity();
+    if (!auth.credentialsMatch(username, process.env.APP_USERNAME) || !await auth.verifyPassword(password)) {
+      return res.status(401).json({ ok: false, error: 'Invalid username or password.' });
+    }
+    const account = auth.identity();
+    if (before.version !== account.version) return res.status(401).json({ ok: false, error: 'Credentials changed. Please sign in again.' });
+    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
+    Object.assign(req.session, { loggedIn: true, username: account.username, ownerId: account.ownerId, authVersion: account.version });
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+app.post('/api/logout', (req, res, next) => {
+  req.session.destroy(err => {
+    if (err) return next(err);
+    res.clearCookie('connect.sid');
+    res.json({ ok: true });
+  });
 });
 
 app.get('/chat', (req, res) => {
-  if (!req.session || !req.session.loggedIn) return res.redirect('/');
+  if (!auth.isAuthenticated(req)) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'views', 'chat.html'));
 });
 
 app.get('/profile', (req, res) => {
-  if (!req.session || !req.session.loggedIn) return res.redirect('/');
+  if (!auth.isAuthenticated(req)) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'views', 'profile.html'));
 });
 
 app.get('/api/me', requireAuth, (req, res) => {
-  res.json({ ok: true, username: req.session.username });
+  res.json({ ok: true, username: req.session.username, ownerId: req.session.ownerId });
 });
 
 app.get('/api/session-usage', requireAuth, (req, res) => {
   res.json({ ok: true, usage: req.session.tokenUsage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 } });
 });
 
-app.post('/api/change-password', requireAuth, (req, res) => {
-  const { currentPassword, newPassword } = req.body || {};
-  if (typeof currentPassword !== 'string' || !auth.verifyPassword(currentPassword)) {
-    return res.status(401).json({ ok: false, error: 'Current password is incorrect.' });
-  }
-  if (typeof newPassword !== 'string' || newPassword.length < 6) {
-    return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters.' });
-  }
-  auth.setPassword(newPassword);
-  res.json({ ok: true });
+app.post('/api/change-password', requireAuth, loginLimit, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!await auth.verifyPassword(currentPassword)) return res.status(401).json({ ok: false, error: 'Current password is incorrect.' });
+    if (!auth.validPassword(newPassword)) return res.status(400).json({ ok: false, error: 'Use at least 12 characters and at most 1024 bytes.' });
+    await auth.setPassword(newPassword);
+    req.session.destroy(err => {
+      if (err) return next(err);
+      res.clearCookie('connect.sid');
+      res.json({ ok: true, signInRequired: true });
+    });
+  } catch (err) { next(err); }
 });
 
 app.get('/api/models', requireAuth, async (req, res) => {
@@ -238,6 +243,8 @@ app.get('/api/models', requireAuth, async (req, res) => {
   res.json({ ok: true, models: withCapabilities, default: DEFAULT_MODEL });
 });
 
+app.post('/api/confirm/:id', requireAuth, require('./lib/confirmations').confirm);
+
 app.get('/api/agents', requireAuth, (req, res) => {
   res.json({ ok: true, agents: AVAILABLE_AGENTS, default: AVAILABLE_AGENTS[0].id });
 });
@@ -247,7 +254,7 @@ app.get('/api/agents', requireAuth, (req, res) => {
 // plain-text summaries of the two messages rather than the raw (possibly
 // attachment-laden) message objects, since a title has no need to re-upload
 // an image or a PDF just to name the conversation.
-app.post('/api/generate-title', requireAuth, async (req, res) => {
+app.post('/api/generate-title', requireAuth, bindConversation, requestScope, async (req, res) => {
   const { userMessage, assistantMessage, agent } = req.body || {};
   if (typeof userMessage !== 'string' || typeof assistantMessage !== 'string') {
     return res.status(400).json({ ok: false, error: 'userMessage and assistantMessage are required' });
@@ -258,34 +265,12 @@ app.post('/api/generate-title', requireAuth, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Server is missing OPENROUTER_API_KEY' });
   }
 
-  // A soccer-lineup thread's messages can carry real player names — this
-  // titling call is its own outbound AI request, so it needs the same
-  // scrubbing the chat flow itself gets. If the roster can't be read, or a
-  // mentioned name is ambiguous, fall back to a generic placeholder rather
-  // than risk sending a name through unscrubbed.
-  let titleUserText = userMessage;
-  let titleAssistantText = assistantMessage;
-  if (agent === soccerLineup.AGENT_ID) {
-    let roster = null;
-    try {
-      roster = soccerLineup.loadRoster(req.session.username);
-    } catch {
-      roster = null;
-    }
-    if (roster) {
-      const ctx = soccerPrivacy.buildAnonymizationContext(roster);
-      const scrubbedUser = soccerPrivacy.scrubText(userMessage, ctx);
-      const scrubbedAssistant = soccerPrivacy.scrubText(assistantMessage, ctx);
-      titleUserText = scrubbedUser.ambiguousNames.size === 0 ? scrubbedUser.text : '(soccer roster update)';
-      titleAssistantText = scrubbedAssistant.ambiguousNames.size === 0 ? scrubbedAssistant.text : '(soccer roster update)';
-    } else {
-      titleUserText = '(soccer roster update)';
-      titleAssistantText = '(soccer roster update)';
-    }
-  }
+  if (agent === soccerLineup.AGENT_ID) return res.json({ ok: true, title: 'Soccer lineup' });
+  const titleUserText = userMessage;
+  const titleAssistantText = assistantMessage;
 
   try {
-    const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const upstream = await providerFetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -332,22 +317,21 @@ app.post('/api/generate-title', requireAuth, async (req, res) => {
   }
 });
 
-// Both the Soccer Lineup agent (lib/soccerLineupChat.js) and the export_file
-// tool for the General Assistant (lib/exportChat.js) are two-call
-// tool-calling flows, kept in their own modules per CLAUDE.md's file-size
-// guidance rather than growing this file further.
-app.post('/api/chat', requireAuth, async (req, res) => {
+// Agent handlers own tool execution; all model requests share one bounded scope.
+app.post('/api/chat', requireAuth, bindConversation, operations, requestScope, async (req, res) => {
   const { messages, model, responseLength, agent } = req.body || {};
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ ok: false, error: 'messages array is required' });
+  if (!validateMessages(messages)) {
+    return res.status(400).json({ ok: false, error: 'Use up to 100 user/assistant messages, at most 32000 characters per text part and 2 MiB total. Start a new chat if needed.' });
   }
+  if (agent && !VALID_AGENT_IDS.has(agent)) return res.status(400).json({ ok: false, error: 'Unsupported agent.' });
   const selectedModel = VALID_MODEL_IDS.has(model) ? model : DEFAULT_MODEL;
   const selectedAgent = VALID_AGENT_IDS.has(agent) ? agent : AVAILABLE_AGENTS[0].id;
   const maxTokens = Object.prototype.hasOwnProperty.call(RESPONSE_LENGTH_TOKENS, responseLength)
     ? RESPONSE_LENGTH_TOKENS[responseLength]
     : RESPONSE_LENGTH_TOKENS[DEFAULT_RESPONSE_LENGTH];
 
-  const facts = loadFacts();
+  const facts = selectedAgent === soccerLineup.AGENT_ID || process.env.SEND_STANDING_FACTS !== 'true' ? '' : loadFacts();
+  if (facts.length > 16000) return res.status(400).json({ ok: false, error: 'Standing facts exceed 16000 characters. Shorten the configured facts file.' });
   const upstreamMessages = facts ? [{ role: 'system', content: facts }, ...messages] : messages;
 
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -361,6 +345,8 @@ app.post('/api/chat', requireAuth, async (req, res) => {
     maxTokens,
     apiKey,
     username: req.session.username,
+    ownerId: req.session.ownerId,
+    gameId: req.body.gameId,
     appUrl,
     session: req.session,
   };
@@ -388,7 +374,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   }
 
   try {
-    const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const upstream = await providerFetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -409,7 +395,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
       const data = await upstream.json().catch(() => ({}));
       return res
         .status(upstream.status)
-        .json({ ok: false, error: data?.error?.message || 'OpenRouter request failed' });
+        .json({ ok: false, error: 'The AI provider could not complete this request.' });
     }
 
     await pipeUpstreamStream(upstream, res, { onUsage: (u) => addUsage(req.session, u) });
@@ -448,7 +434,7 @@ app.post('/api/export', requireAuth, async (req, res) => {
 // memory for 15 minutes (lib/exportStore.js) — a stale link past that point
 // is a 404, not a dangling file on disk.
 app.get('/api/files/:id', requireAuth, (req, res) => {
-  const entry = exportStore.getExport(req.params.id);
+  const entry = exportStore.getExport(req.params.id, req.session.ownerId);
   if (!entry) {
     return res.status(404).json({ ok: false, error: 'File not found or expired.' });
   }
@@ -460,30 +446,26 @@ app.get('/api/files/:id', requireAuth, (req, res) => {
 // The roster panel's REST API and the lineup draft/finalization REST API
 // (no LLM involved anywhere in either) live in their own modules per
 // CLAUDE.md's file-size guidance.
+app.use('/api/soccer', requireAuth, require('./lib/soccerApiValidation').validateSoccer, operations);
 app.use('/api/soccer', soccerRosterRoutes);
 app.use('/api/soccer', soccerLineupRoutes);
 
-// Ensures the private roster directory exists and migrates any legacy
-// data/rosters/*.json into it (see lib/rosterMigration.js) before the
-// server starts accepting requests. A misconfigured RAYGPT_DATA_DIR that
-// resolves inside this repo is a hard startup failure, not a warning —
-// private data must never land somewhere a git operation could pick it up.
-try {
-  const migrationSummary = soccerLineup.initRosterStorage();
-  const { migrated, conflicts, skippedInvalid, errors } = migrationSummary;
-  if (migrated.length) console.log(`Roster migration: moved ${migrated.length} file(s) to the private data directory.`);
-  if (conflicts.length) console.warn(`Roster migration: ${conflicts.length} file(s) already exist at the destination and differ — resolve manually: ${conflicts.join(', ')}`);
-  if (skippedInvalid.length) console.warn(`Roster migration: ${skippedInvalid.length} legacy file(s) were not valid roster JSON and were left in place: ${skippedInvalid.join(', ')}`);
-  if (errors.length) console.warn(`Roster migration: ${errors.length} file(s) could not be migrated: ${errors.map((e) => `${e.file} (${e.reason})`).join(', ')}`);
-  soccerLineupHistory.initLineupHistoryStorage();
-} catch (err) {
-  if (err instanceof PrivateDataConfigError) {
-    console.error(err.message);
-    process.exit(1);
-  }
-  throw err;
-}
-
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+app.use((err, req, res, next) => {
+  if (res.headersSent) return res.end();
+  const status = err.type === 'entity.too.large' ? 413 : err instanceof SyntaxError ? 400 : 500;
+  res.status(status).json({ ok: false, error: status === 413 ? 'Request is too large.' : status === 400 ? 'Invalid JSON request.' : 'The operation failed. Please try again.' });
 });
+
+async function start() {
+  if (process.env.NODE_ENV === 'production') throw new Error('Production is disabled until a persistent session store is configured in the database task.');
+  await auth.initialize();
+  const summary = soccerLineup.initRosterStorage();
+  if (summary.conflicts.length || summary.errors.length) console.warn('Roster migration needs attention; existing files were preserved.');
+  soccerLineupHistory.initLineupHistoryStorage();
+  return app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+}
+if (require.main === module) start().catch(err => {
+  console.error(err instanceof auth.AuthConfigurationError ? err.message : 'Startup failed. Check private storage configuration. Production requires a persistent session store.');
+  process.exitCode = 1;
+});
+module.exports = { app, start };

@@ -11,6 +11,7 @@ const messagesEl = document.getElementById('messages');
 const input = document.getElementById('input');
 
 export function addBubble(role, text) {
+  messagesEl.querySelector('#empty-state')?.remove();
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   div.textContent = text;
@@ -77,7 +78,7 @@ function makeFileChipEl(name, icon) {
 // that actually carries export metadata — never a persistent per-message
 // control.
 export function renderExportChip(bubble, exportMeta) {
-  if (!exportMeta || !exportMeta.url) return;
+  if (!exportMeta || !/^\/api\/files\/[a-f0-9-]{36}$/.test(exportMeta.url || '')) return;
   const link = document.createElement('a');
   link.className = 'msg-export';
   link.href = exportMeta.url;
@@ -134,6 +135,7 @@ const EMPTY_STATE_SUGGESTIONS = [
 ];
 
 function renderEmptyState() {
+  const soccer = document.getElementById('agent-select')?.value === 'soccer-lineup';
   const wrap = document.createElement('div');
   wrap.id = 'empty-state';
 
@@ -144,12 +146,18 @@ function renderEmptyState() {
 
   const subhead = document.createElement('p');
   subhead.className = 'empty-state-subhead';
-  subhead.textContent = 'Ask anything, or start from one of these.';
+  subhead.textContent = soccer ? 'Start with a command, using names from your roster.' : 'Ask anything, or start from one of these.';
   wrap.appendChild(subhead);
 
   const grid = document.createElement('div');
   grid.className = 'suggestion-grid';
-  for (const s of EMPTY_STATE_SUGGESTIONS) {
+  const suggestions = soccer ? [
+    { icon: '⚽', label: 'Create a lineup', detail: 'Uses your saved roster and preferences', prompt: 'Create a lineup' },
+    { icon: '⏸', label: 'Rest a player', detail: 'Replace the name with a current roster name', prompt: 'Rest [player name] in Q1' },
+    { icon: '📍', label: 'Choose a position', detail: 'Specify the player, position and quarter', prompt: 'Put [player name] at left back in Q2' },
+    { icon: '⚙️', label: 'Set a preference', detail: 'Review before saving a new default', prompt: 'Make weaker defenders on the left my default' },
+  ] : EMPTY_STATE_SUGGESTIONS;
+  for (const s of suggestions) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'suggestion-card';
@@ -212,3 +220,8 @@ export function renderHistory(messages, { onLineupUpdate } = {}) {
     }
   }
 }
+
+document.getElementById('agent-select')?.addEventListener('change', () => {
+  const empty = messagesEl.querySelector('#empty-state');
+  if (empty) { empty.remove(); renderEmptyState(); }
+});

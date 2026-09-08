@@ -10,6 +10,7 @@ const os = require('node:os');
 // filesystem, is enough — no module reset needed.
 const TMP_ROOT = path.join(os.tmpdir(), 'raygpt-test-soccerLineup-' + process.pid);
 process.env.RAYGPT_DATA_DIR = TMP_ROOT;
+process.env.RAYGPT_LEGACY_ROSTER_DIR = path.join(process.env.RAYGPT_DATA_DIR, 'isolated-legacy');
 
 const soccerLineup = require('../lib/soccerLineup');
 

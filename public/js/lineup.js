@@ -1,3 +1,4 @@
+import { apiFetch } from './api.js';
 // Draft/finalized lineup cards: a compact quarters/bench view plus
 // "Generate another option" / "Mark used" / "Undo" controls for one saved
 // game. Appended below the assistant bubble that mentions it (same slot
@@ -27,8 +28,15 @@ function statusLabel(status) {
   return status === 'finalized' ? 'Finalized' : 'Draft';
 }
 
-async function fetchGame(gameId) {
-  const res = await fetch(`/api/soccer/games/${encodeURIComponent(gameId)}`);
+const gameRequests = new Map();
+function fetchGame(gameId) {
+  if (gameRequests.has(gameId)) return gameRequests.get(gameId);
+  const promise = loadGame(gameId).finally(() => gameRequests.delete(gameId));
+  gameRequests.set(gameId, promise);
+  return promise;
+}
+async function loadGame(gameId) {
+  const res = await apiFetch(`/api/soccer/games/${encodeURIComponent(gameId)}`);
   if (res.status === 401) {
     window.location.href = '/';
     return null;
@@ -39,7 +47,7 @@ async function fetchGame(gameId) {
 }
 
 async function postAction(gameId, action) {
-  const res = await fetch(`/api/soccer/games/${encodeURIComponent(gameId)}/${action}`, {
+  const res = await apiFetch(`/api/soccer/games/${encodeURIComponent(gameId)}/${action}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',
@@ -61,6 +69,7 @@ function metaFromGame(game) {
     status: game.status,
     draftId: game.selectedDraftId,
     rotationInfluenced: !!(draft && draft.result && draft.result.rotationInfluenced),
+    historyConsidered: (game.frozenInputs.rotationStatsSnapshot?.gamesConsidered || 0) > 0,
   };
 }
 
@@ -133,7 +142,7 @@ export function renderLineupCard(container, meta, { onUpdate } = {}) {
   const note = document.createElement('p');
   note.className = 'lineup-rotation-note';
   note.hidden = true;
-  note.textContent = 'Recent finalized-game history influenced this lineup.';
+  note.textContent = 'Finalized planned assignments were considered alongside lineup variety.';
   card.appendChild(note);
 
   const rosterChangedNote = document.createElement('p');
@@ -150,6 +159,7 @@ export function renderLineupCard(container, meta, { onUpdate } = {}) {
   const statusMsg = document.createElement('p');
   statusMsg.className = 'lineup-action-status';
   statusMsg.hidden = true;
+  statusMsg.setAttribute('role', 'status');
   card.appendChild(statusMsg);
 
   const actions = document.createElement('div');
@@ -178,7 +188,10 @@ export function renderLineupCard(container, meta, { onUpdate } = {}) {
     altBtn.type = 'button';
     altBtn.className = 'lineup-btn';
     altBtn.textContent = '🔀 Generate another option';
-    altBtn.addEventListener('click', () => runAction('alternative'));
+    altBtn.addEventListener('click', () => {
+      if (currentMeta.status === 'finalized' && !window.confirm('Generate another option and return this game to draft status?')) return;
+      runAction('alternative');
+    });
     actions.appendChild(altBtn);
 
     if (currentMeta.status === 'finalized') {
@@ -205,7 +218,7 @@ export function renderLineupCard(container, meta, { onUpdate } = {}) {
     badge.className = `lineup-status-badge ${currentMeta.status === 'finalized' ? 'finalized' : 'draft'}`;
     badge.textContent = statusLabel(currentMeta.status);
     dateEl.textContent = currentMeta.date || '';
-    note.hidden = !currentMeta.rotationInfluenced;
+    note.hidden = !currentMeta.historyConsidered;
     rosterChangedNote.hidden = !(currentGame && currentGame.rosterChanged);
     if (currentGame) renderQuarters(body, currentGame);
     renderActions();
@@ -239,7 +252,7 @@ export function renderLineupCard(container, meta, { onUpdate } = {}) {
   badge.textContent = statusLabel(meta.status);
   badge.className = `lineup-status-badge ${meta.status === 'finalized' ? 'finalized' : 'draft'}`;
   dateEl.textContent = meta.date || '';
-  note.hidden = !meta.rotationInfluenced;
+  note.hidden = !meta.historyConsidered;
 
   fetchGame(meta.gameId)
     .then((game) => {

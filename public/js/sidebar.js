@@ -1,12 +1,6 @@
 // The left sidebar: thread list rendering, inline rename, drag-to-resize,
 // and the mobile slide-over drawer (hamburger toggle + backdrop).
 //
-// Note: this module and state.js import from each other — rendering the
-// thread list needs the thread data (state.js), and switching/creating/
-// deleting a thread needs to re-render that list (here). That's a genuine
-// mutual dependency, not an accident of file layout, and it's safe under ES
-// modules because both sides only touch the other's exports inside event
-// handlers, never at the top level while the modules are still loading.
 import { state, switchToThread, deleteThread, createThread, saveState } from './state.js';
 
 const sidebar = document.getElementById('sidebar');
@@ -16,9 +10,21 @@ const sidebarBackdrop = document.getElementById('sidebar-backdrop');
 const newChatBtn = document.getElementById('new-chat-btn');
 const threadListEl = document.getElementById('thread-list');
 
+const mobile = window.matchMedia('(max-width: 768px)');
+function syncDrawer() {
+  const open = sidebar.classList.contains('open');
+  sidebar.inert = mobile.matches && !open;
+  sidebarToggle.setAttribute('aria-expanded', String(open));
+}
+mobile.addEventListener('change', syncDrawer);
+syncDrawer();
+
 export function closeSidebarOnMobile() {
+  const wasOpen = sidebar.classList.contains('open');
   sidebar.classList.remove('open');
   sidebarBackdrop.classList.remove('open');
+  syncDrawer();
+  if (mobile.matches && wasOpen) sidebarToggle.focus();
 }
 
 export function renderThreadList() {
@@ -108,6 +114,8 @@ newChatBtn.addEventListener('click', createThread);
 sidebarToggle.addEventListener('click', () => {
   sidebar.classList.toggle('open');
   sidebarBackdrop.classList.toggle('open');
+  syncDrawer();
+  if (sidebar.classList.contains('open')) newChatBtn.focus();
 });
 sidebarBackdrop.addEventListener('click', closeSidebarOnMobile);
 
@@ -170,3 +178,16 @@ window.addEventListener('touchmove', (e) => {
   doResize(e.touches[0].clientX);
 });
 window.addEventListener('touchend', endResize);
+
+window.addEventListener('thread-list-change', renderThreadList);
+window.addEventListener('sidebar-close', closeSidebarOnMobile);
+
+document.addEventListener('keydown', event => {
+  if (!mobile.matches || !sidebar.classList.contains('open')) return;
+  if (event.key === 'Escape') { closeSidebarOnMobile(); return; }
+  if (event.key !== 'Tab') return;
+  const items = [...sidebar.querySelectorAll('button, select, input, [tabindex="0"]')].filter(el => !el.disabled && el.getClientRects().length);
+  const first = items[0], last = items.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+});
