@@ -146,7 +146,7 @@ function renderEmptyState() {
 
   const subhead = document.createElement('p');
   subhead.className = 'empty-state-subhead';
-  subhead.textContent = soccer ? 'Start with a command, using names from your roster.' : 'Ask anything, or start from one of these.';
+  subhead.textContent = soccer ? 'Ask about strategy, discuss your lineup, or tell me what you’d like to change.' : 'Ask anything, or start from one of these.';
   wrap.appendChild(subhead);
 
   const grid = document.createElement('div');

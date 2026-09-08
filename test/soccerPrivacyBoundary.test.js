@@ -272,7 +272,7 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
       session: {},
     });
     assert.strictEqual(capturedRequests.length, 0, 'an ambiguous name must never reach the model');
-    assert.ok(res.fullText.includes('ambiguous players'));
+    assert.ok(res.fullText.includes('more than one player'));
   });
 
   await t.test('an image attachment is blocked locally — zero AI calls', async () => {

@@ -100,9 +100,10 @@ tied to any one chat):
 
 ## Soccer Lineup agent
 
-Select **Soccer Lineup** from the Agent dropdown. Chat now accepts only the
-complete commands listed under “What actually gets sent to the AI provider”;
-free-form examples below describe coaching intent, and may require rephrasing.
+Select **Soccer Lineup** from the Agent dropdown. Chat supports natural conversation, strategy questions, and follow-ups.
+Current roster names are replaced in conversation text before provider calls;
+other identifying details may remain. Conversational action proposals always
+require confirmation, including creation of a draft.
 Describe what you want
 in plain English — e.g. "Rest Emma the first half, put Sarah at left back in
 the third quarter." The model doesn't schedule the game itself: it only
@@ -484,11 +485,11 @@ above the same way you'd back up any other personal file on your machine.
 
 ### What actually gets sent to the AI provider
 
-Soccer chat accepts a limited set of complete commands. The server resolves
-current player names locally, including Unicode names, and produces opaque
-`Player_N` references. Unknown, removed, renamed, ambiguous or unsupported
-references prompt local clarification; arbitrary prose is never passed through
-as a fallback. Type current roster names, not previously displayed labels.
+Soccer chat supports conversation and strategy discussion. Current roster names,
+including Unicode names, are replaced locally with `Player_N` references.
+Ambiguous current names prompt clarification. Names no longer on the roster and
+other identifying details in free-form text may remain; this is not full
+anonymization. Type current roster names rather than opaque labels.
 Examples (all names below are fictional):
 
 - `Create a lineup for 2026-09-12`
@@ -499,15 +500,13 @@ Examples (all names below are fictional):
 - `Give me another option` or `Use this lineup` in a conversation with a lineup card
 - Combine complete commands with semicolons.
 
-Only the controlled current command, validated roster ratings with opaque
-labels, application instructions, and an explicitly resolved saved-game ID
-reach the model. Conversation history, standing facts, attachments, titles,
-saved warnings and tool results are excluded. Results are explained locally,
-so an old game's frozen names never need another AI request. Soccer titles
-are local. Unrecognized requests show examples instead of making a model call.
-This deliberately narrows free-form soccer conversation. The scheduler and
-its fairness/coaching rules are unchanged; use direct roster controls and
-lineup-card actions for those workflows.
+Recognized complete commands use minimal current-command context. Natural
+conversation sends filtered user/assistant text history, pseudonymous roster
+ratings, and the selected saved lineup when available. Standing facts,
+attachments and client system messages are excluded. Soccer titles remain
+local. All actions proposed through natural conversation require confirmation;
+validated complete commands retain their existing confirmation rules.
+The scheduler and fairness/coaching rules are unchanged.
 
 Pseudonyms are not anonymity: ratings and scheduling constraints can still
 be identifying when correlated with outside information. Regular expressions
