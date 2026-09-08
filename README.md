@@ -343,6 +343,26 @@ every other rotation preference, this is a bias among already-suitable,
 already-fairness-eligible candidates, never a rule that overrides
 availability, fairness, or a pin.
 
+**No repeat goalkeepers, by default:** unless you say otherwise (an
+explicit pin always wins), the same player won't play goalkeeper twice in
+one game — each quarter prefers a keeper who hasn't already had a turn.
+If every suitable keeper has already played (most often because there's
+really only one on the roster), repeating one is the fallback, with a
+warning explaining why, rather than forcing a clearly unsuited player into
+goal. Goalkeeper suitability is also checked before, not after, AYSO
+fairness ordering — a keeper never loses their spot to a less-suited
+outfield player just because that player has sat out more recently; that
+protection was already the intent for goalkeeper eligibility, this just
+makes sure a full quarter's worth of bench rotation can't quietly work
+around it.
+
+**Protecting a former goalkeeper's playing time:** once someone has played
+goalkeeper and already sat out a quarter, they're preferred for whatever
+slot is open next, so they don't lose a second quarter on top of the
+first. Same bounds as everywhere else — a bias among suitable, eligible
+candidates, not a guarantee; AYSO fairness (unchanged) still decides who
+actually sits when there's no way around it.
+
 ### Drafts, alternatives, and finalizing a lineup
 
 Every generated lineup is saved immediately as a **draft**, with a short
@@ -782,7 +802,14 @@ suite is fictional. Coverage includes:
   in quarters played but differ in whether they were on the field the
   quarter before — the Q4 goalkeeper is drawn from whoever was off the
   field far more often than not, while Q3 (deliberately excluded from that
-  preference) shows no such bias at all under the identical kind of tie.
+  preference) shows no such bias at all under the identical kind of tie;
+  with enough suitable candidates, no player ever plays goalkeeper twice
+  in one game, falling back to a repeat (with a warning) only when a
+  single roster keeper makes it truly unavoidable — including the
+  "unavoidable 4th quarter" fallback path, not just the ordinary tie-break;
+  an explicit pin can still reuse a goalkeeper without any warning; and a
+  player who's already played goalkeeper and sat out a quarter rarely gets
+  left to sit out a second one.
 - `test/soccerPositionContinuity.test.js` — the intra-game position-
   continuity module in isolation: a same-role scramble (within defense, or
   within midfield) across two consecutive quarters is restored to last
