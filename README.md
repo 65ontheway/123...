@@ -17,11 +17,15 @@ Edit `.env`:
 
 - `OPENROUTER_API_KEY` — your key from https://openrouter.ai/keys
 - `OPENROUTER_MODEL` — any OpenRouter model slug (defaults to `qwen/qwen3.8-27b`, labeled "Qwen3.8 27B (Default)" in the picker); this is just the server's default — the chat page also has a model picker
-- `APP_USERNAME` / `APP_PASSWORD` — the login credentials. `APP_PASSWORD` is
-  only the *initial* password — changing it from the profile screen (see
-  below) stores a hashed replacement in `data/auth.json` instead, and that
-  file takes over from then on. The username can't be changed from the app.
-- `SESSION_SECRET` — any long random string
+- `APP_USERNAME` — required, 1–80 ASCII letters, digits, underscores or hyphens.
+- `APP_PASSWORD` — required only to initialize a new account; at least 12
+  characters and at most 1024 UTF-8 bytes. There is no default password.
+  Saved credentials take precedence and unreadable credentials fail closed.
+- `SESSION_SECRET` — required random secret of at least 32 bytes. Generate
+  one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+- `APP_URL` — canonical browser origin, normally `http://localhost:3000`.
+- `TRUST_PROXY` — optional comma-separated trusted proxy IPs/subnets. Leave
+  unset for direct local use; do not grant blanket trust to forwarded headers.
 - `PORT` — defaults to 3000
 - `FACTS_FILE` — optional, defaults to `facts.md` (see below)
 
@@ -35,11 +39,12 @@ Open http://localhost:3000, log in, and you're redirected to `/chat`.
 
 ## Standing facts (`facts.md`)
 
-Anything in `facts.md` is sent to the model as a system message on every
-request, regardless of which model is selected. Edit and save the file any
+Standing facts are disabled by default. Set `SEND_STANDING_FACTS=true` to
+include `facts.md` in General Assistant requests only. Soccer requests never
+include this file. Keep it free of confidential soccer data; enabling it is
+an explicit disclosure to the selected provider. Edit and save the file any
 time — the server re-reads it automatically (checked on every request via its
-last-modified time), no restart needed. Keep it short: it's included, and
-billed, on every single message.
+last-modified time), no restart needed. The limit is 16,000 characters; longer files cause a visible request error.
 
 `facts.md` is git-ignored (it's easy to end up putting personal details in
 it), so it's not part of the repo. Copy `facts.md.example` to `facts.md` and
@@ -61,7 +66,7 @@ The composer has a single 📎 attach button that opens a small menu:
   attached. Attached images are downscaled to at most 1280px on the long
   edge and re-encoded as JPEG in the browser before sending, to keep
   requests small.
-- **Upload file** — a PDF, Word (`.docx`), or Excel (`.xlsx`/`.xls`) file.
+- **Upload file** — a PDF, Word (`.docx`), or Excel (`.xlsx`; convert legacy `.xls` first) file.
   Always available, regardless of which model is selected:
   - PDFs are sent through OpenRouter's own universal PDF parser, which works
     with any model (not just ones with native file support).
@@ -85,15 +90,20 @@ Below the chat list, the sidebar has two dropdowns (global settings, not
 tied to any one chat):
 
 - **Response length** — Short (500 tokens), Medium (1000, default), or Long
-  (no cap — bounded only by the model's own limit). Applies to the next
+  (4000-token maximum). Applies to the next
   message sent, from any chat.
-- **Agent** — **General Assistant** is the plain chat flow (it can also
+- **Agent** — each conversation has its own fixed agent. Switching agents
+  starts a separate conversation when the current one has messages.
+  **General Assistant** is the plain chat flow (it can also
   export files — see below). **Soccer Lineup** is a real tool-calling
   agent — see below.
 
 ## Soccer Lineup agent
 
-Select **Soccer Lineup** from the Agent dropdown and describe what you want
+Select **Soccer Lineup** from the Agent dropdown. Chat now accepts only the
+complete commands listed under “What actually gets sent to the AI provider”;
+free-form examples below describe coaching intent, and may require rephrasing.
+Describe what you want
 in plain English — e.g. "Rest Emma the first half, put Sarah at left back in
 the third quarter." The model doesn't schedule the game itself: it only
 turns your request into structured, per-quarter constraints (formation,
@@ -474,47 +484,102 @@ above the same way you'd back up any other personal file on your machine.
 
 ### What actually gets sent to the AI provider
 
-For every Soccer Lineup request — scheduling, chat-based roster updates, and
-the follow-up explanation that comes back afterward — real player names
-never leave the server. Before any OpenRouter call, the app builds a
-per-request mapping from each player to an opaque label (`Player_1`,
-`Player_2`, ...); the current message, the entire replayed conversation
-history, the system prompt describing the roster, and every tool call's
-arguments and results all go out labeled, never named. The model's reply is
-translated back to real names locally, after the response comes back, so
-what you see in the chat still reads naturally.
+Soccer chat accepts a limited set of complete commands. The server resolves
+current player names locally, including Unicode names, and produces opaque
+`Player_N` references. Unknown, removed, renamed, ambiguous or unsupported
+references prompt local clarification; arbitrary prose is never passed through
+as a fallback. Type current roster names, not previously displayed labels.
+Examples (all names below are fictional):
 
-This covers the request in full, not just the latest message — including
-older messages replayed for context and the title the app generates for a
-new chat. Attachments (images, PDFs, etc.) aren't supported by this agent
-at all; a message with one is blocked locally before any AI call, since
-there's no safe way to guarantee an attachment doesn't contain something
-that shouldn't be anonymized.
+- `Create a lineup for 2026-09-12`
+- `Rest Fixture Maple in Q1`
+- `Put Fixture Maple at left back in Q2`
+- `Bump Fixture Maple offense to 5`
+- `Make weaker defenders on the left my default`
+- `Give me another option` or `Use this lineup` in a conversation with a lineup card
+- Combine complete commands with semicolons.
 
-**What this doesn't claim:** scheduling information itself (ratings, which
-quarter someone rests, formation, exact positions, side preferences) still
-leaves the server — an LLM needs *something* to reason about, and none of
-that is personally identifying on its own. What's protected is the name.
-That protection only covers names already on your roster, matched as whole
-words — it can't recognize a name it's never seen before (a typo, a
-nickname, someone not yet added), which is part of why adding a new player
-is never allowed through chat. And opaque labels aren't a cryptographic
-anonymity guarantee on their own — this is a real, meaningful reduction in
-what leaves the server, not a claim that the data is unlinkable by a
-determined adversary. Server-side logs and error messages for this agent
-are also written to avoid real names, for the same reason. Saving a side
-preference default never involves a player name or label at all — it's a
-plain settings update, handled by its own tool call so an ordinary lineup
-request can never accidentally change it.
+Only the controlled current command, validated roster ratings with opaque
+labels, application instructions, and an explicitly resolved saved-game ID
+reach the model. Conversation history, standing facts, attachments, titles,
+saved warnings and tool results are excluded. Results are explained locally,
+so an old game's frozen names never need another AI request. Soccer titles
+are local. Unrecognized requests show examples instead of making a model call.
+This deliberately narrows free-form soccer conversation. The scheduler and
+its fairness/coaching rules are unchanged; use direct roster controls and
+lineup-card actions for those workflows.
 
-A saved lineup's game reference id and date pass through as plain text
-too — the model needs to see and echo a game id back to resolve "another
-option" or "use this lineup" on a later turn, and neither an id nor a date
-identifies a player on its own. "Another option" and "finalize" never
-recompute anything by calling the model again either: those are plain
-application-code actions (button or chat) against a lineup the app already
-generated, so there's nothing new for a request to leak in the first
-place.
+Pseudonyms are not anonymity: ratings and scheduling constraints can still
+be identifying when correlated with outside information. Regular expressions
+alone cannot perfectly anonymize arbitrary free text. The complete-command
+gate is a restriction on what can leave, not a claim of perfect anonymization.
+General Assistant sends the messages and attachments in its own conversation
+to the provider. It never inherits a soccer conversation when switching agents.
+
+The model's proposed actions are validated in application code. Unknown tools
+are rejected. Roster edits, saved preferences, alternative generation and
+finalization show a concrete, expiring confirmation before running. Confirming
+once consumes the proposal; a changed roster/selected option invalidates it.
+New drafts are reversible and may be created directly from a scheduling request.
+Failures report what was saved; combined actions are not a database transaction.
+
+### Local hosting and limits
+
+The application still supports one configured account and one server process.
+`NODE_ENV=production` refuses startup until the separate database task provides
+a persistent session store. Express MemoryStore is not production-ready.
+No database or deployment is included in this cleanup.
+
+Login renews the session ID. Password changes invalidate all existing sessions
+and require sign-in again. Cookies are HTTP-only, SameSite=Lax and secure on
+HTTPS. Unsafe browser requests are origin-checked and JSON-only; CSP, framing,
+referrer and private-cache headers apply. Inline styles remain allowed for the
+existing visual design, while scripts load from this origin only.
+
+Credential hashes and immutable account IDs live in `auth.json` under the
+private data directory. New passwords use asynchronous scrypt with N=32768,
+r=8, p=1, a 64-byte key and a random 16-byte salt (64 MiB maximum allocation).
+The legacy repository `data/auth.json`, when present and valid, is copied into
+the private record during initialization without changing the saved password.
+Legacy scrypt records retain N=16384 until the next password change. The old
+file is preserved; remove it manually only after checking your own migration.
+Malformed/unreadable saved records never fall back to an earlier password.
+Do not change APP_USERNAME on an existing record; account migration is explicit.
+
+Browser history is stored under the account's immutable ID. Legacy
+`raygpt.threads.v1` history has no trustworthy owner or privacy policy, so it is
+preserved but hidden, with no automatic import into any account. Clear history
+removes only the current account's history. Local browser storage is not
+encrypted and is not a boundary against someone controlling the browser profile.
+Logout/account changes invalidate other open tabs; stale-account requests fail.
+
+AI requests allow one active request per account and four per process, with a
+90-second total deadline and at most three provider calls including retries.
+Short/Medium/Long cap each call at 500/1000/4000 output tokens. Persistent
+24-hour limits are 100 requests (including titles), 300,000 reserved output
+tokens, and 16 MiB of submitted input. Chat reserves up to three calls before
+starting; unused reservations are not refunded. Failures do not bypass these
+limits, and unreadable budget records block new requests.
+[Provider price ceilings](https://openrouter.ai/docs/guides/routing/provider-selection)
+are $5 per million prompt tokens and $20 per million completion tokens.
+An unavailable model at those prices fails rather than silently using a more
+expensive provider. These are safeguards, not a dollar-accurate billing ledger;
+set an OpenRouter key spending limit for a hard account-level currency budget,
+especially for file/image processing charges.
+
+General chat accepts at most 100 messages, 32,000 characters per text part and
+2 MiB of combined content, within a 3 MiB HTTP body. Other API bodies are capped
+at 16 KiB. Excess context is rejected with an error rather than silently
+truncating instructions or breaking tool-message structure. Start a new chat
+when a thread reaches the limit. Browser attachments are at most 1 MiB each,
+four staged files; supported spreadsheet input is XLSX (convert legacy XLS).
+
+Mutation requests to chat/soccer APIs carry `X-Operation-ID` UUIDs. Durable
+24-hour receipts are written before execution and refuse repeated IDs, including
+uncertain retries. A 409 asks you to check saved results before starting a new
+action. This is duplicate protection for a single process, not a multi-process
+transaction system. Cancel stops upstream AI work; an already completed local
+write remains saved and can be checked in its lineup card.
 
 ## File export
 
@@ -560,7 +625,7 @@ call uses; requires being logged in — pass your session cookie jar):
 # Log in first to get a session cookie
 curl -c cookies.txt -X POST http://localhost:3000/api/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"changeme"}'
+  -d '{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD"}'
 
 # txt
 curl -b cookies.txt -X POST http://localhost:3000/api/export \
@@ -604,18 +669,13 @@ click it to open `/profile`:
   two-call flow, and the title-generation call). This resets when your
   login session ends; it's not a running lifetime total, and it's not
   per-account cost tracking — just a quick sense of how much a session used.
-- **Clear history** — permanently deletes every chat thread stored in this
+- **Clear history** — permanently deletes the current account's chat threads in this
   browser (with a confirmation first, since it can't be undone). This is
   purely local: threads have never lived server-side, so this doesn't touch
   the roster or any other account data.
-- **Change password** — the current app has just the one hardcoded account
-  from `.env`, so this doesn't create new accounts or touch the username;
-  it only replaces the password check. Requires your current password,
-  hashes the new one (Node's built-in `crypto.scrypt`, salted, never stored
-  in plaintext), and writes it to `data/auth.json` — git-ignored, same
-  pattern as `facts.md`. Until you change it for the first
-  time, login still falls back to `APP_PASSWORD` from `.env`, so existing
-  setups need no migration step.
+- **Change password** — requires the current password, atomically replaces
+  the private credential hash, invalidates existing sessions, and signs out.
+  A failed write preserves the previously saved credential.
 
 Account deletion isn't in here — with only one hardcoded account today,
 "deleting" it doesn't have an obvious meaning yet; that's a better fit once
@@ -623,96 +683,26 @@ real multi-account support exists.
 
 ## Auto-generated chat titles
 
-New chats are titled from the truncated first message at first, but once the
+General Assistant chats are titled from the truncated first message at first, but once the
 first exchange finishes, the server asks a cheap/fast model
 (`deepseek/deepseek-v3.2`) for a real 3-6 word title and swaps it in. This
 happens once per chat — if it fails (network issue, etc.) the truncated
 title just stays as-is rather than retrying on every later message.
 
-## How it works
+## Code organization
 
-- `public/login.html` — login form, posts to `POST /api/login`.
-- `server.js` — validates credentials (username against `APP_USERNAME`,
-  password via `lib/auth.js`), stores a session cookie, serves
-  `views/chat.html`/`views/profile.html` only to authenticated sessions,
-  and proxies `POST /api/chat` to OpenRouter's `/chat/completions` endpoint
-  using the server-side API key.
-- `views/chat.html` — chat page markup only. Served exclusively through the
-  authenticated `GET /chat` route.
-- `views/profile.html` — the profile screen markup, served through the
-  authenticated `GET /profile` route.
-- `public/css/` — styling, one file per UI area: `base.css` (shared theme
-  tokens/reset, used by both pages), `header.css` (shared by both pages'
-  headers), `sidebar.css`, `messages.css` (chat transcript + empty state),
-  `composer.css`, `profile.css`.
-- `public/js/` — client logic as real ES modules (loaded via
-  `<script type="module">`, no build step), one per concern:
-  - `state.js` — thread data, localStorage persistence, thread lifecycle
-  - `settings.js` — model/agent catalog, response-length, image capability
-  - `sidebar.js` — thread list UI, rename, resize, mobile drawer
-  - `attachments.js` — staging/extracting images, PDFs, Word/Excel; the
-    attach menu; paste-to-attach
-  - `messages.js` — rendering bubbles, Markdown, the empty-state cards, and
-    the export download chip
-  - `roster.js` — the Soccer Lineup roster panel: visibility tied to the
-    selected agent, open/close, list rendering, add/edit/remove against the
-    roster REST API, the side-preferences selects (auto-saving against
-    their own endpoint), and its own loading/saving/saved/error states
-  - `chat.js` — the chat page's entry point: composer send/streaming flow
-    and bootstrap; the only file that imports from all the chat-page modules
-  - `profile.js` — the profile page's entry point. Deliberately
-    self-contained rather than importing `state.js`, since that module's
-    dependency chain (`sidebar.js`, `attachments.js`) wires up listeners on
-    chat.html-only elements at load time, which would throw on this page.
+The browser remains HTML/CSS/ES modules, with Express on the server.
+`historyStore.js` owns account-scoped browser persistence; `state.js` handles
+thread lifecycle. Sidebar/settings updates use events to avoid circular imports.
+`api.js` attaches account identity and operation IDs. Roster and lineup controls
+remain direct REST workflows without model calls. Document libraries load lazily.
 
-  Like everything else in `public/`, all of these are served unauthenticated
-  (there's nothing sensitive in them — the API key never leaves the server),
-  the same way `/vendor/*.js` already are.
-- `lib/soccerLineup.js` / `lib/soccerFormations.js` / `lib/soccerScheduling.js`
-  / `lib/soccerSidePreferences.js` / `lib/soccerLineupChat.js` /
-  `lib/soccerPrivacy.js` / `lib/soccerRosterRoutes.js` — the Soccer Lineup
-  agent, split by concern: `soccerLineup.js` is roster storage (atomic
-  writes, per-account locking, player IDs) and direct player CRUD for the
-  panel; `soccerFormations.js` is the position catalog (every formation's
-  exact slots, their role/side, alias/token normalization); `soccerScheduling.js`
-  is the two scheduling tool schemas and the deterministic 4-quarter,
-  position- and side-preference-aware scheduling algorithm itself;
-  `soccerSidePreferences.js` is the left/right preference defaults,
-  validation, roster migration, and the side-assignment swap step;
-  `soccerPrivacy.js` builds the per-request name↔label anonymization used
-  on every outbound AI call (see "What actually gets sent to the AI
-  provider" above); `soccerLineupChat.js` is the chat-driven tool-calling
-  flow that ties those together, including running more than one tool call
-  in a single turn; `soccerRosterRoutes.js` is the roster panel's REST API
-  (`/api/soccer/roster*`), which never calls the model at all. Split into
-  separate files since the domain logic, the position/preference catalog,
-  the privacy layer, and the two different entry points (chat vs. panel)
-  are each worth testing on their own — see CLAUDE.md's guidance on
-  splitting before a file grows past ~500 lines.
-- `lib/privateData.js` — resolves where private, per-account data (roster
-  files today) lives on disk, outside the git repo; see "Where roster data
-  lives" above.
-- `lib/rosterMigration.js` — the one-time, non-destructive copy of any
-  legacy `data/rosters/*.json` files into the private data directory, run
-  at server startup.
-- `lib/export.js` / `lib/exportStore.js` / `lib/exportChat.js` — the file
-  export feature: the `export_file` tool definition and actual file
-  generation (txt/csv/pdf/docx/xlsx), the in-memory temporary file store +
-  rate limiter, and the keyword-gated chat-handling respectively.
-- `lib/auth.js` — password hashing/verification for the single hardcoded
-  account (see Profile settings above).
-- `lib/tokenUsage.js` — accumulates each OpenRouter response's `usage` onto
-  the login session, for the profile screen's token-usage display.
-- `lib/sse.js` — the SSE passthrough shared by the plain chat flow and
-  every agent's explanatory (post-tool-call) streamed reply. Reconstructs
-  the stream line-by-line (rather than forwarding raw bytes) so it can
-  optionally observe each chunk's `usage` field and/or inject one extra
-  chunk (used by the export flow to attach download metadata) without
-  changing what the client receives. The Soccer Lineup agent's explanatory
-  reply is buffered and de-anonymized as a whole before being sent to the
-  browser as one or two chunks, rather than streamed token-by-token like
-  every other agent — the trade-off exists because a name label could
-  otherwise be split across stream chunks and missed during substitution.
+Server concerns are separated into authentication/security, runtime validation,
+provider requests/budgets, operation receipts, conversation policy, and export
+storage. Soccer storage still uses private JSON files and per-account locks;
+the scheduler, formation catalog, fairness priorities, continuity and rotation
+algorithm are unchanged. Cached roster values are copied so failed writes cannot
+leave unsaved mutations appearing as saved data.
 
 ## Tests
 

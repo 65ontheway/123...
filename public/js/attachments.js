@@ -137,6 +137,7 @@ function fileToArrayBuffer(file) {
 
 // .docx -> plain text via mammoth (self-hosted browser bundle, no server round-trip).
 async function extractDocxText(file) {
+  await loadLibrary('/vendor/mammoth.js');
   const arrayBuffer = await fileToArrayBuffer(file);
   const result = await window.mammoth.extractRawText({ arrayBuffer });
   return result.value.trim();
@@ -145,6 +146,7 @@ async function extractDocxText(file) {
 // .xlsx/.xls -> plain text via exceljs: each sheet rendered as a simple
 // comma-separated grid under a heading with its sheet name.
 async function extractSpreadsheetText(file) {
+  await loadLibrary('/vendor/exceljs.js');
   const arrayBuffer = await fileToArrayBuffer(file);
   const workbook = new window.ExcelJS.Workbook();
   await workbook.xlsx.load(arrayBuffer);
@@ -171,12 +173,14 @@ const XLSX_MIMES = [
 ];
 
 async function ingestFile(file) {
+  if (file.size > 1024 * 1024 || stagedAttachments.length >= 4) throw new Error('Attachment limit');
+  if (document.getElementById('agent-select').value === 'soccer-lineup') throw new Error('Soccer attachments are not supported');
   const ext = (file.name || '').toLowerCase().split('.').pop();
 
   if (file.type.startsWith('image/')) {
     // Mirrors the image menu item's own gating: a model that can't see
     // images shouldn't silently receive one via paste either.
-    if (!currentModelSupportsImages()) return;
+    if (!currentModelSupportsImages()) throw new Error('This model does not support images');
     const dataUrl = await downscaleImage(file);
     stagedAttachments.push({
       id: newAttachmentId(),
@@ -212,8 +216,7 @@ async function ingestFile(file) {
       text,
     });
   }
-  // Anything else (e.g. legacy .doc) is silently skipped rather than
-  // blocking the rest of a multi-file paste/selection.
+  else throw new Error('Unsupported attachment type');
 }
 
 async function ingestFiles(files) {
@@ -221,7 +224,7 @@ async function ingestFiles(files) {
     try {
       await ingestFile(file);
     } catch {
-      // skip files that fail to decode/parse rather than blocking the rest
+      window.dispatchEvent(new CustomEvent('attachment-error', { detail: 'An attachment could not be read. Use a supported file within the size limit.' }));
     }
   }
   renderAttachmentPreviews();
@@ -300,3 +303,17 @@ input.addEventListener('paste', (e) => {
   e.preventDefault();
   ingestFiles(files);
 });
+
+window.addEventListener('model-capability-change', handleImageCapabilityChange);
+
+const libraries = new Map();
+function loadLibrary(src) {
+  if (!libraries.has(src)) libraries.set(src, new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => { libraries.delete(src); reject(new Error('Library could not load')); };
+    document.head.appendChild(script);
+  }));
+  return libraries.get(src);
+}

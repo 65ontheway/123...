@@ -1,3 +1,6 @@
+import './sidebar.js';
+import { apiFetch } from './api.js';
+import { initializeHistoryOwner } from './historyStore.js';
 // Entry point: wires up the composer's send/streaming flow and the textarea's
 // own behavior, then bootstraps the page. Everything else (thread state,
 // settings, sidebar, attachments, message rendering) lives in its own module
@@ -10,6 +13,7 @@ import {
   makeThreadTitle,
   maybeGenerateTitle,
   initActiveThread,
+  loadAccountHistory,
   getActiveController,
   setActiveController,
 } from './state.js';
@@ -99,7 +103,17 @@ composer.addEventListener('submit', async (e) => {
   let finishReason = '';
   let exportMeta = null;
   let lineupMeta = null;
+  let confirmation = null;
 
+  let frame = null;
+  function paint() {
+    frame = null;
+    if (!structured) return;
+    renderAssistantText(bubble.querySelector('.answer'), assistantText);
+    renderAssistantText(bubble.querySelector('.thinking-body'), reasoningText);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  function schedulePaint() { if (frame === null) frame = requestAnimationFrame(paint); }
   function ensureAssistantStructure() {
     if (structured) return;
     structured = true;
@@ -110,14 +124,17 @@ composer.addEventListener('submit', async (e) => {
   }
 
   try {
-    const res = await fetch('/api/chat', {
+    const res = await apiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: activeThread.messages,
+        messages: activeThread.messages.map(({ role, content }) => ({ role, content })),
+        conversationId: activeThread.id,
+        gameId: [...activeThread.messages].reverse().find(message => message.lineup)?.lineup.gameId,
+        operationId: crypto.randomUUID(),
         model: modelSelect.value,
         responseLength: responseLengthSelect.value,
-        agent: agentSelect.value,
+        agent: activeThread.agent,
       }),
       signal: controller.signal,
     });
@@ -131,6 +148,7 @@ composer.addEventListener('submit', async (e) => {
       const data = await res.json().catch(() => ({}));
       bubble.remove();
       addBubble('error', data.error || 'Something went wrong.');
+      input.value = text;
       return;
     }
 
@@ -138,6 +156,7 @@ composer.addEventListener('submit', async (e) => {
     const decoder = new TextDecoder();
     let buffer = '';
     let streamError = '';
+    let doneSeen = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -150,7 +169,7 @@ composer.addEventListener('submit', async (e) => {
         const trimmed = line.trim();
         if (!trimmed.startsWith('data:')) continue;
         const payload = trimmed.slice(5).trim();
-        if (payload === '[DONE]') continue;
+        if (payload === '[DONE]') { doneSeen = true; continue; }
 
         let json;
         try {
@@ -168,6 +187,7 @@ composer.addEventListener('submit', async (e) => {
         if (json.choices?.[0]?.finish_reason) {
           finishReason = json.choices[0].finish_reason;
         }
+        if (delta.confirmation) confirmation = delta.confirmation;
         if (delta.export) {
           exportMeta = delta.export;
         }
@@ -182,8 +202,7 @@ composer.addEventListener('submit', async (e) => {
           const thinkingEl = bubble.querySelector('.thinking');
           thinkingEl.hidden = false;
           thinkingEl.open = true;
-          renderAssistantText(bubble.querySelector('.thinking-body'), reasoningText);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          schedulePaint();
         }
 
         if (delta.content) {
@@ -193,12 +212,12 @@ composer.addEventListener('submit', async (e) => {
             if (thinkingEl) thinkingEl.open = false; // collapse once the real answer starts
           }
           assistantText += delta.content;
-          renderAssistantText(bubble.querySelector('.answer'), assistantText);
-          messagesEl.scrollTop = messagesEl.scrollHeight;
+          schedulePaint();
         }
       }
     }
 
+    if (!doneSeen || streamError) addBubble('error', 'The response was interrupted. Any completed lineup actions remain available in saved games.');
     if (streamError && !assistantText) {
       bubble.remove();
       addBubble('error', streamError);
@@ -211,6 +230,7 @@ composer.addEventListener('submit', async (e) => {
         ensureAssistantStructure();
         renderExportChip(bubble, exportMeta);
       }
+      if (confirmation) renderConfirmation(bubble, confirmation, activeThread);
       const newMessage = {
         role: 'assistant',
         content: assistantText,
@@ -257,9 +277,12 @@ composer.addEventListener('submit', async (e) => {
       }
     } else {
       bubble.remove();
-      addBubble('error', 'Could not reach the server.');
+      addBubble('error', 'Could not reach the server. Check saved games before repeating an action.');
+      input.value = text;
     }
   } finally {
+    if (frame !== null) cancelAnimationFrame(frame);
+    paint();
     setActiveController(null);
     sendBtn.textContent = 'Send';
     sendBtn.classList.remove('stop');
@@ -270,7 +293,7 @@ composer.addEventListener('submit', async (e) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
+  await apiFetch('/api/logout', { method: 'POST' });
   window.location.href = '/';
 });
 
@@ -280,7 +303,7 @@ usernameBtn.addEventListener('click', () => {
 
 async function loadUsername() {
   try {
-    const res = await fetch('/api/me');
+    const res = await apiFetch('/api/me');
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -293,6 +316,38 @@ async function loadUsername() {
 }
 
 (async () => {
+  await initializeHistoryOwner();
   await Promise.all([loadModels(), loadAgents(), loadUsername()]);
+  loadAccountHistory();
   initActiveThread();
 })();
+
+window.addEventListener('history-error', () => addBubble('error', 'This chat could not be saved in this browser. Free storage before leaving the page.'));
+
+function renderConfirmation(bubble, confirmation, thread) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Confirm these changes';
+  bubble.appendChild(button);
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      const response = await apiFetch(`/api/confirm/${confirmation.id}`, { method: 'POST' });
+      if (!response.ok) throw new Error('Confirmation expired or failed. Check saved results before requesting it again.');
+      const text = await response.text();
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('data: {')) continue;
+        const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta;
+        if (!delta) continue;
+        const result = addBubble('assistant', '');
+        renderAssistantText(result, delta.content || 'Action completed.');
+        if (delta.lineup) renderLineupCard(result, delta.lineup);
+        thread.messages.push({ role: 'assistant', content: delta.content || '', ...(delta.lineup ? { lineup: delta.lineup } : {}) });
+        saveState();
+      }
+      button.remove();
+    } catch (err) { addBubble('error', err.message); }
+  });
+}
+
+window.addEventListener('attachment-error', event => addBubble('error', event.detail));

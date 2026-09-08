@@ -12,6 +12,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 process.env.RAYGPT_DATA_DIR = path.join(os.tmpdir(), 'raygpt-test-lineup-history-' + process.pid);
+process.env.RAYGPT_LEGACY_ROSTER_DIR = path.join(process.env.RAYGPT_DATA_DIR, 'isolated-legacy');
 
 const soccerLineup = require('../lib/soccerLineup');
 const scheduling = require('../lib/soccerScheduling');

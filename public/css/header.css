@@ -130,3 +130,13 @@ header::after {
     min-height: 44px;
   }
 }
+
+@media (max-width: 480px) {
+  .header-actions { width: 100%; min-width: 0; gap: 6px; }
+  #username-btn { min-width: 0; max-width: 35%; overflow: hidden; text-overflow: ellipsis; padding: 8px 4px; }
+  #model-select { min-width: 0; flex: 1; max-width: none; width: 0; padding: 8px 4px; }
+  #logout-btn { flex: 0 0 auto; padding: 8px; white-space: nowrap; }
+}
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}

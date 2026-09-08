@@ -1,3 +1,4 @@
+import { apiFetch } from './api.js';
 // The profile page's entry point. Deliberately self-contained rather than
 // importing state.js: that module (and the sidebar.js/attachments.js it
 // pulls in) wires up event listeners on chat.html-only elements at module
@@ -6,7 +7,8 @@
 // localStorage key state.js uses, documented below.
 
 // Must match STORAGE_KEY in state.js.
-const THREADS_STORAGE_KEY = 'raygpt.threads.v1';
+import { initializeHistoryOwner, clearHistory } from './historyStore.js';
+await initializeHistoryOwner();
 
 const usernameEl = document.getElementById('profile-username');
 const usagePromptEl = document.getElementById('usage-prompt');
@@ -26,7 +28,7 @@ function showStatus(el, message, isError) {
 
 async function loadUsername() {
   try {
-    const res = await fetch('/api/me');
+    const res = await apiFetch('/api/me');
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -40,7 +42,7 @@ async function loadUsername() {
 
 async function loadUsage() {
   try {
-    const res = await fetch('/api/session-usage');
+    const res = await apiFetch('/api/session-usage');
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -58,7 +60,7 @@ async function loadUsage() {
 clearHistoryBtn.addEventListener('click', () => {
   if (!window.confirm('Delete every chat thread stored in this browser? This can\'t be undone.')) return;
   try {
-    localStorage.removeItem(THREADS_STORAGE_KEY);
+    clearHistory();
     showStatus(clearHistoryStatus, 'History cleared.', false);
   } catch {
     showStatus(clearHistoryStatus, 'Could not clear history — local storage is unavailable.', true);
@@ -77,14 +79,15 @@ changePasswordForm.addEventListener('submit', async (e) => {
   }
 
   try {
-    const res = await fetch('/api/change-password', {
+    const res = await apiFetch('/api/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentPassword, newPassword }),
     });
     const data = await res.json().catch(() => ({}));
     if (data.ok) {
-      showStatus(changePasswordStatus, 'Password changed.', false);
+      showStatus(changePasswordStatus, 'Password changed. Please sign in again.', false);
+      window.location.replace('/');
       changePasswordForm.reset();
     } else {
       showStatus(changePasswordStatus, data.error || 'Could not change password.', true);
@@ -95,7 +98,7 @@ changePasswordForm.addEventListener('submit', async (e) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
+  await apiFetch('/api/logout', { method: 'POST' });
   window.location.href = '/';
 });
 

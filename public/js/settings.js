@@ -1,17 +1,10 @@
+import { apiFetch } from './api.js';
 // The composer's four dropdowns/config sources: which model, which agent,
 // how long a reply should be, and (derived from the model catalog) which
 // models can see images.
 //
-// Note: this module and attachments.js import from each other —
-// settings.js needs to clear a staged image the moment the selected model
-// stops supporting them, and attachments.js needs to know the current
-// model's capability before staging one. That's a real, mutual dependency
-// between "what can the current model do" and "what's staged for it", not
-// an accident of file layout. It's safe under ES modules because both
-// sides only touch the other's exports inside event handlers / async
-// functions, never at the top level while the modules are still loading.
-import { handleImageCapabilityChange } from './attachments.js';
-import { getActiveThread, saveState } from './state.js';
+const handleImageCapabilityChange = () => window.dispatchEvent(new Event('model-capability-change'));
+import { getActiveThread, saveState, createThread } from './state.js';
 
 const modelSelect = document.getElementById('model-select');
 const agentSelect = document.getElementById('agent-select');
@@ -43,7 +36,7 @@ modelSelect.addEventListener('change', () => {
 
 export async function loadModels() {
   try {
-    const res = await fetch('/api/models');
+    const res = await apiFetch('/api/models');
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -68,7 +61,7 @@ export async function loadModels() {
 
 export async function loadAgents() {
   try {
-    const res = await fetch('/api/agents');
+    const res = await apiFetch('/api/agents');
     if (res.status === 401) {
       window.location.href = '/';
       return;
@@ -107,6 +100,13 @@ responseLengthSelect.addEventListener('change', () => {
   }
 });
 agentSelect.addEventListener('change', () => {
+  const privacyNote = document.getElementById('privacy-note');
+  if (privacyNote) privacyNote.hidden = agentSelect.value !== 'soccer-lineup';
+  const thread = getActiveThread();
+  if (thread && thread.agent !== agentSelect.value) {
+    if (thread.messages.length) createThread();
+    else { thread.agent = agentSelect.value; saveState(); }
+  }
   try {
     localStorage.setItem('raygpt.agent', agentSelect.value);
   } catch {

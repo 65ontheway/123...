@@ -88,12 +88,13 @@
             <button type="submit" id="send-btn">Send</button>
           </div>
         </form>
+      <p id="privacy-note" class="composer-hint" hidden>Soccer chat uses only the current command. Names are resolved locally; history, facts and attachments stay out of AI requests. Separate commands with semicolons.</p>
       </div>
     </main>
   </div>
 
   <div id="roster-panel-backdrop"></div>
-  <aside id="roster-panel" aria-label="Roster">
+  <aside id="roster-panel" aria-label="Roster" role="dialog" aria-modal="true" inert>
     <div class="roster-panel-header">
       <h2>Roster</h2>
       <button type="button" id="roster-panel-close" aria-label="Close roster panel">✕</button>
@@ -147,8 +148,6 @@
 
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/dompurify.js"></script>
-  <script src="/vendor/mammoth.js"></script>
-  <script src="/vendor/exceljs.js"></script>
   <script type="module" src="/js/chat.js"></script>
   <script type="module" src="/js/roster.js"></script>
 </body>

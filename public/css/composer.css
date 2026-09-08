@@ -200,3 +200,5 @@ form#composer {
 #send-btn:disabled { opacity: 0.5; cursor: default; }
 #send-btn.stop { background: var(--error); }
 #send-btn.stop:hover { filter: brightness(1.1); }
+
+.composer-hint { margin: 0; padding: 4px 16px 8px; font-size: 12px; color: var(--muted); }

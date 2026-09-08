@@ -14,10 +14,24 @@ const path = require('node:path');
 const os = require('node:os');
 
 process.env.RAYGPT_DATA_DIR = path.join(os.tmpdir(), 'raygpt-test-boundary-' + process.pid);
+process.env.RAYGPT_LEGACY_ROSTER_DIR = path.join(process.env.RAYGPT_DATA_DIR, 'isolated-legacy');
 
 const soccerLineup = require('../lib/soccerLineup');
 const soccerPrivacy = require('../lib/soccerPrivacy');
-const { handleSoccerLineupChat } = require('../lib/soccerLineupChat');
+const { handleSoccerLineupChat: runChat } = require('../lib/soccerLineupChat');
+// These workflow tests explicitly accept the returned, one-use proposal.
+// Separate security tests assert that unconfirmed/wrong-owner actions never run.
+async function handleSoccerLineupChat(res, options) {
+  const calls = nextResponse?.toolCalls || [nextResponse?.toolCall].filter(Boolean);
+  const gameId = calls.find(call => call.args?.gameId)?.args.gameId;
+  await runChat(res, { ...options, ownerId: options.username, gameId });
+  for (const line of res.fullText.split('\n')) {
+    if (!line.startsWith('data: {')) continue;
+    const confirmation = JSON.parse(line.slice(6)).choices?.[0]?.delta?.confirmation;
+    if (confirmation) await require('../lib/confirmations').confirm({ params: { id: confirmation.id }, session: { ownerId: options.username } }, res, err => { throw err; });
+  }
+}
+
 
 let capturedRequests = [];
 let nextResponse = null;
@@ -150,7 +164,7 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
     nextResponse = { toolCall: { name: 'set_game_lineup', args: {} } };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Rest Fixture Alpha in the first quarter please.' }],
+      upstreamMessages: [{ role: 'user', content: 'Please rest Fixture Alpha in the first quarter.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -158,7 +172,7 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
       appUrl: 'http://localhost',
       session: {},
     });
-    assert.strictEqual(capturedRequests.length, 2, 'expected exactly two outbound calls (tool-decision + explain)');
+    assert.strictEqual(capturedRequests.length, 1, 'only the tool decision leaves the server; explanations stay local');
     assertNoLeaks(t, 'scheduling request');
     // The final reply shown to the USER is expected to have real names —
     // that's the whole point; only the AI-bound traffic must be scrubbed.
@@ -258,7 +272,7 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
       session: {},
     });
     assert.strictEqual(capturedRequests.length, 0, 'an ambiguous name must never reach the model');
-    assert.ok(res.fullText.includes('more than one player'));
+    assert.ok(res.fullText.includes('ambiguous players'));
   });
 
   await t.test('an image attachment is blocked locally — zero AI calls', async () => {
@@ -316,7 +330,7 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
     };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Make weaker defenders my default on the left, and set the lineup.' }],
+      upstreamMessages: [{ role: 'user', content: 'Make weaker defenders on the left my default; Set the lineup.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
@@ -330,9 +344,8 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
     // Both tool results must have reached the explain call — the explain-call
     // request is the last captured one, and its tool messages are echoed
     // back joined by " | " (see installMockFetch), so both are inspectable.
-    const explainCall = capturedRequests[capturedRequests.length - 1];
-    const toolMessages = explainCall.messages.filter((m) => m.role === 'tool');
-    assert.strictEqual(toolMessages.length, 2, 'both tool calls must produce a tool-result message, not just the first');
+    assert.strictEqual(require('../lib/soccerLineupHistory').listGames('boundaryCoachG').length, 1, 'the draft action must also run');
+    assert.ok(!capturedRequests.some(call => call.messages.some(message => message.role === 'tool')), 'tool results stay local');
   });
 
   await t.test('a this-lineup-only side override never changes the saved default', async () => {
@@ -341,7 +354,7 @@ test('Soccer Lineup agent: mocked AI boundary — no real name ever leaves the s
     nextResponse = { toolCall: { name: 'set_game_lineup', args: { sideOverrides: { defender: 'left' } } } };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'For this game only, put the weaker defender on the left.' }],
+      upstreamMessages: [{ role: 'user', content: 'For this game, put the weaker defender on the left.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
