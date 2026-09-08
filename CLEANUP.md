@@ -99,3 +99,12 @@ Sources: [uuid advisory](https://github.com/advisories/GHSA-w5hq-g745-h8pq),
 
 Before normal startup, review `.env.example` for required configuration. The
 cleanup did not edit the real `.env` or run migrations against real private data.
+
+## Conversational lineup follow-up
+
+At the owner's request, natural soccer conversation now sends history with
+current roster names replaced, plus pseudonymous roster and selected-lineup
+context. Unknown or former names and other identifying prose can remain.
+This supersedes the command-only/history-exclusion limitations above.
+Attachments and standing facts remain excluded. Natural-language tool
+proposals require confirmation, including draft creation.

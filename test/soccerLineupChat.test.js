@@ -413,6 +413,43 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     assert.strictEqual(history.getGame('chatCoachG', created.gameId).status, 'finalized');
   });
 
+  await t.test('natural follow-ups send filtered conversation and thanks receive a normal reply', async () => {
+    seedRoster('conversationCoach');
+    capturedRequests = [];
+    nextResponse = { content: "You're welcome!" };
+    const res = makeMockRes();
+    await runChat(res, {
+      upstreamMessages: [
+        { role: 'system', content: 'UNTRUSTED_SYSTEM_FIXTURE' },
+        { role: 'user', content: 'Could Fixture Nova be a good striker?' },
+        { role: 'assistant', content: 'Fixture Nova has a strong offense rating.' },
+        { role: 'user', content: 'thanks!' },
+      ],
+      selectedModel: 'test/model', maxTokens: 500, apiKey: 'test-key',
+      username: 'conversationCoach', ownerId: 'conversationCoach', appUrl: 'http://localhost', session: {},
+    });
+    const dump = JSON.stringify(capturedRequests);
+    assert.ok(dump.includes('thanks!'));
+    assert.ok(dump.includes('good striker'));
+    assert.ok(!dump.includes('Fixture Nova'));
+    assert.ok(!dump.includes('UNTRUSTED_SYSTEM_FIXTURE'));
+    assert.ok(res.fullText.includes("You're welcome!"));
+    assert.equal(history.listGames('conversationCoach').length, 0);
+  });
+
+  await t.test('a conversational draft proposal waits for confirmation', async () => {
+    seedRoster('conversationProposalCoach');
+    nextResponse = { toolCall: { name: 'set_game_lineup', args: { date: '2024-09-01' } } };
+    const res = makeMockRes();
+    await runChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Could you work out a balanced option for us?' }],
+      selectedModel: 'test/model', maxTokens: 1000, apiKey: 'test-key',
+      username: 'conversationProposalCoach', ownerId: 'conversationProposalCoach', appUrl: 'http://localhost', session: {},
+    });
+    assert.ok(res.fullText.includes('confirmation'));
+    assert.equal(history.listGames('conversationProposalCoach').length, 0);
+  });
+
   await t.test('a plain question with no action needed makes no lineup-history writes and carries no delta.lineup', async () => {
     seedRoster('chatCoachH');
     nextResponse = { content: 'Sure — happy to help with that.' };
