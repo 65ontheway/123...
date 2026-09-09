@@ -74,11 +74,16 @@ test('soccerPrivacy.js', async (t) => {
     assert.ok(extracted.text.includes('attachment omitted'));
   });
 
-  await t.test('looksLikeAddRequest catches common enrollment phrasing, not ordinary scheduling requests', () => {
+  await t.test('looksLikeAddRequest catches common enrollment phrasing, not ordinary scheduling or strategy requests', () => {
     assert.ok(soccerPrivacy.looksLikeAddRequest('add Fixture Charlie to the team'));
+    assert.ok(soccerPrivacy.looksLikeAddRequest('add Fixture Charlie to my roster'));
     assert.ok(soccerPrivacy.looksLikeAddRequest('please sign up a new player'));
+    assert.ok(soccerPrivacy.looksLikeAddRequest('can you enroll a new kid this season'));
     assert.ok(!soccerPrivacy.looksLikeAddRequest('rest Fixture Alpha this quarter'));
     assert.ok(!soccerPrivacy.looksLikeAddRequest('bump Fixture Bravo defense to 4'));
+    assert.ok(!soccerPrivacy.looksLikeAddRequest('add more defensive cover in midfield'), 'ordinary strategy use of "add" must not trigger the roster-panel redirect');
+    assert.ok(!soccerPrivacy.looksLikeAddRequest('should we add another substitution this quarter?'));
+    assert.ok(!soccerPrivacy.looksLikeAddRequest('what would add the most value to our defense?'));
   });
 
   await t.test('describeRosterAnonymized never contains a real name', () => {
