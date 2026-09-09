@@ -79,6 +79,8 @@ const AVAILABLE_MODELS = [
   { id: 'meta/muse-spark-1.2', label: 'Muse Spark 1.2' },
   { id: 'qwen/qwen3.8-max-0902', label: 'Qwen3.8 Max' },
   { id: 'moonshotai/kimi-k3', label: 'Kimi K3' },
+  { id: 'deepseek/deepseek-v4-flash-0731', label: 'Deepseek v4 0731'},
+  { id: 'xiaomi/mimo-v2.5', label: 'Mimo v2.5'},
 ];
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3.8-27b';
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
