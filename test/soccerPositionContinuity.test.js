@@ -11,27 +11,29 @@ function slot(position, role, player, pinKind = null) {
 }
 
 test('soccerPositionContinuity.js', async (t) => {
-  await t.test('CONTINUITY_ROLES covers exactly defender and midfielder', () => {
-    assert.deepStrictEqual([...CONTINUITY_ROLES].sort(), ['defender', 'midfielder']);
+  await t.test('CONTINUITY_ROLES covers exactly midfielder', () => {
+    assert.deepStrictEqual([...CONTINUITY_ROLES], ['midfielder']);
   });
 
   await t.test('no previous quarter (Q1): the lineup is left completely untouched', () => {
     const a = playerWith('a');
-    const lineup = [slot('left_back', 'defender', a)];
+    const lineup = [slot('left_wing', 'midfielder', a)];
     applyPositionContinuity(lineup, null);
     assert.strictEqual(lineup[0].player, a);
   });
 
-  await t.test('two quarters in a row on defense: a scramble within defense is restored to last quarter\'s exact positions', () => {
+  await t.test('a scramble within defense is NEVER restored — defender is out of scope', () => {
     const a = playerWith('a');
     const b = playerWith('b');
     const previous = [slot('left_back', 'defender', a), slot('right_back', 'defender', b)];
-    // This quarter's automatic fill scrambled them the other way around
-    // (both still playing defender — just a different side each).
+    // Both still playing defender — just a different side each. An earlier,
+    // broader version of continuity covered both defender and midfielder;
+    // it's since been narrowed to midfielder only, so this must be left
+    // exactly as the (hypothetical) fill produced it.
     const lineup = [slot('left_back', 'defender', b), slot('right_back', 'defender', a)];
     applyPositionContinuity(lineup, previous);
-    assert.strictEqual(lineup[0].player, a, 'left_back should be restored to its previous occupant');
-    assert.strictEqual(lineup[1].player, b, 'right_back should be restored to its previous occupant');
+    assert.strictEqual(lineup[0].player, b, 'defender is out of scope — nothing should be restored');
+    assert.strictEqual(lineup[1].player, a);
   });
 
   await t.test('two quarters in a row at midfield: a scramble within midfield is restored to last quarter\'s exact positions', () => {
@@ -58,39 +60,39 @@ test('soccerPositionContinuity.js', async (t) => {
   });
 
   await t.test('an exact-pinned slot is never moved, and never used as someone else\'s continuity target', () => {
-    const a = playerWith('a'); // wants left_back back
-    const pinned = playerWith('pinned'); // explicitly pinned to left_back THIS quarter
-    const previous = [slot('left_back', 'defender', a), slot('right_back', 'defender', pinned)];
-    const lineup = [slot('left_back', 'defender', pinned, 'exact'), slot('right_back', 'defender', a)];
+    const a = playerWith('a'); // wants left_wing back
+    const pinned = playerWith('pinned'); // explicitly pinned to left_wing THIS quarter
+    const previous = [slot('left_wing', 'midfielder', a), slot('right_wing', 'midfielder', pinned)];
+    const lineup = [slot('left_wing', 'midfielder', pinned, 'exact'), slot('right_wing', 'midfielder', a)];
     applyPositionContinuity(lineup, previous);
     assert.strictEqual(lineup[0].player, pinned, 'the exact pin must never be displaced');
     assert.strictEqual(lineup[1].player, a, 'with no reachable target, the continuing player just stays where the fill put them');
   });
 
   await t.test('a generic-pinned slot is also excluded from continuity, in both directions', () => {
-    const a = playerWith('a'); // wants left_back back
-    const pinnedForRole = playerWith('pinnedForRole'); // generically pinned to "defender" this quarter, landed at left_back
-    const previous = [slot('left_back', 'defender', a), slot('right_back', 'defender', pinnedForRole)];
-    const lineup = [slot('left_back', 'defender', pinnedForRole, 'generic'), slot('right_back', 'defender', a)];
+    const a = playerWith('a'); // wants left_wing back
+    const pinnedForRole = playerWith('pinnedForRole'); // generically pinned to "midfielder" this quarter, landed at left_wing
+    const previous = [slot('left_wing', 'midfielder', a), slot('right_wing', 'midfielder', pinnedForRole)];
+    const lineup = [slot('left_wing', 'midfielder', pinnedForRole, 'generic'), slot('right_wing', 'midfielder', a)];
     applyPositionContinuity(lineup, previous);
     assert.strictEqual(lineup[0].player, pinnedForRole, 'a generic pin for this quarter must never be displaced by continuity');
     assert.strictEqual(lineup[1].player, a);
   });
 
-  await t.test('a brand-new player (no defender/midfielder history last quarter) is never moved by continuity', () => {
+  await t.test('a brand-new player (no midfielder history last quarter) is never moved by continuity', () => {
     const newSub = playerWith('newSub');
-    const previous = [slot('left_back', 'defender', playerWith('someoneElse'))];
-    const lineup = [slot('left_back', 'defender', newSub)];
+    const previous = [slot('left_wing', 'midfielder', playerWith('someoneElse'))];
+    const lineup = [slot('left_wing', 'midfielder', newSub)];
     applyPositionContinuity(lineup, previous);
     assert.strictEqual(lineup[0].player, newSub, 'no history means no continuity claim on this slot');
   });
 
   await t.test('a player who rested or was benched last quarter (absent from the previous lineup) has no continuity constraint', () => {
     const benched = playerWith('benched');
-    const previous = [slot('left_back', 'defender', playerWith('other'))]; // benched player doesn't appear at all
-    const lineup = [slot('right_back', 'defender', benched)];
+    const previous = [slot('left_wing', 'midfielder', playerWith('other'))]; // benched player doesn't appear at all
+    const lineup = [slot('right_wing', 'midfielder', benched)];
     applyPositionContinuity(lineup, previous);
-    assert.strictEqual(lineup[0].player, benched, 'no prior D/M position on record means nothing to restore — not "two quarters in a row"');
+    assert.strictEqual(lineup[0].player, benched, 'no prior midfielder position on record means nothing to restore — not "two quarters in a row"');
   });
 
   await t.test('a three-way cycle within the same role (midfield) fully resolves', () => {
@@ -114,10 +116,10 @@ test('soccerPositionContinuity.js', async (t) => {
     assert.strictEqual(lineup[2].player, c);
   });
 
-  await t.test('forward/goalkeeper slots are never part of continuity, even for a player who played defense last quarter', () => {
-    const a = playerWith('a'); // played left_back last quarter, moved to forward this quarter
-    const previous = [slot('left_back', 'defender', a)];
-    const lineup = [slot('striker', 'forward', a), slot('left_back', 'defender', playerWith('b'))];
+  await t.test('forward/goalkeeper slots are never part of continuity, even for a player who played midfield last quarter', () => {
+    const a = playerWith('a'); // played left_wing last quarter, moved to forward this quarter
+    const previous = [slot('left_wing', 'midfielder', a)];
+    const lineup = [slot('striker', 'forward', a), slot('left_wing', 'midfielder', playerWith('b'))];
     applyPositionContinuity(lineup, previous);
     assert.strictEqual(lineup[0].player, a, 'a role change into forward is outside continuity\'s scope entirely');
     assert.strictEqual(lineup[1].player.id, 'b');
@@ -126,8 +128,8 @@ test('soccerPositionContinuity.js', async (t) => {
   await t.test('a player already in their previous exact position is left alone (no-op, not even an internal swap)', () => {
     const a = playerWith('a');
     const b = playerWith('b');
-    const previous = [slot('left_back', 'defender', a), slot('right_back', 'defender', b)];
-    const lineup = [slot('left_back', 'defender', a), slot('right_back', 'defender', b)];
+    const previous = [slot('left_wing', 'midfielder', a), slot('right_wing', 'midfielder', b)];
+    const lineup = [slot('left_wing', 'midfielder', a), slot('right_wing', 'midfielder', b)];
     applyPositionContinuity(lineup, previous);
     assert.strictEqual(lineup[0].player, a);
     assert.strictEqual(lineup[1].player, b);

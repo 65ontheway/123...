@@ -46,15 +46,24 @@ test('soccerScheduling.js (computeGameLineup)', async (t) => {
     }
   });
 
-  await t.test('default preferences place the lower-average defender right and midfielder/wing left', () => {
+  await t.test('by default, the weak-player preference claims left wing and right back ahead of side preference', () => {
     const { roster, players } = buildRoster('2-3-1');
     const result = soccerLineup.computeGameLineup(roster, {});
     const q1 = result.quarters[0].lineup;
-    const leftBack = q1.find((s) => s.position === 'left_back');
+    const leftWing = q1.find((s) => s.position === 'left_wing');
     const rightBack = q1.find((s) => s.position === 'right_back');
-    // Fixture Left (avg 3) is lower than Fixture Right (avg 4.5) -> Fixture Left should be on the right.
-    assert.strictEqual(rightBack.player.id, findByName(players, 'Fixture Left').id);
-    assert.strictEqual(leftBack.player.id, findByName(players, 'Fixture Right').id);
+    // Of the two players who stand out at all (Fixture Left/Right), Left is
+    // the weaker all-around choice for midfield (offense 1, avg 3 vs.
+    // Right's avg 3.5), so left wing's weak-player preference claims them
+    // first, in turn leaving Right the only real defender left for right
+    // back. Both slots are marked weakPreference — the (now moot, for these
+    // two specifically) side-preference step never gets a chance to
+    // re-swap either of them; see soccerSidePreferences.test.js for that
+    // exclusion tested directly.
+    assert.strictEqual(leftWing.player.id, findByName(players, 'Fixture Left').id);
+    assert.strictEqual(leftWing.weakPreference, true);
+    assert.strictEqual(rightBack.player.id, findByName(players, 'Fixture Right').id);
+    assert.strictEqual(rightBack.weakPreference, true);
   });
 
   await t.test('an exact-position pin lands the player exactly there and is honored ahead of a generic pin', () => {
@@ -90,13 +99,36 @@ test('soccerScheduling.js (computeGameLineup)', async (t) => {
   });
 
   await t.test('sideOverrides applies a this-lineup-only preference without needing saved settings', () => {
-    const { roster, players } = buildRoster('2-3-1');
-    const left = findByName(players, 'Fixture Left');
-    const result = soccerLineup.computeGameLineup(roster, { sideOverrides: { defender: 'left' } });
-    const leftBack = result.quarters[0].lineup.find((s) => s.position === 'left_back');
-    assert.strictEqual(leftBack.player.id, left.id, 'overriding to "left" should put the lower-average player on the left');
-    const applied = result.sidePreferencesApplied.find((e) => e.role === 'defender');
-    assert.deepStrictEqual(applied, { role: 'defender', value: 'left', source: 'temporary' });
+    // Uses the midfielder pair in 2-2-2 (left_midfield/right_midfield) —
+    // deliberately NOT left_wing or right_back, since those are governed
+    // by the weak-player preference and side-assignment never gets a
+    // chance to touch them (see the "weak-player preference claims left
+    // wing and right back" test above). MidLow/MidHigh differ only on
+    // offense, with defense left bland like every filler, so neither one
+    // is remotely attractive to right_back's weak-player preference —
+    // this fixture isolates side-assignment's own behavior cleanly.
+    const roster = { formation: '2-2-2', players: [] };
+    const specs = [
+      { name: 'Fixture Keeper', offense: 1, defense: 1, goalie: 5 },
+      { name: 'Fixture Filler A', offense: 1, defense: 1, goalie: 1 },
+      { name: 'Fixture Filler B', offense: 1, defense: 1, goalie: 1 },
+      { name: 'Fixture Filler C', offense: 1, defense: 1, goalie: 1 },
+      { name: 'Fixture Filler D', offense: 1, defense: 1, goalie: 1 },
+      { name: 'Fixture Filler E', offense: 1, defense: 1, goalie: 1 },
+      { name: 'Fixture MidLow', offense: 3, defense: 1, goalie: 1 }, // avg 2 (lower)
+      { name: 'Fixture MidHigh', offense: 5, defense: 1, goalie: 1 }, // avg 3 (higher)
+    ];
+    const players = specs.map((s) => soccerLineup.addPlayerDirect(roster, s));
+    const midLow = findByName(players, 'Fixture MidLow');
+    const midHigh = findByName(players, 'Fixture MidHigh');
+    const result = soccerLineup.computeGameLineup(roster, { sideOverrides: { midfielder: 'right' } });
+    const q1 = result.quarters[0].lineup;
+    // Default midfielder preference is 'left' (lower average goes left);
+    // overriding to 'right' should flip it for this lineup only.
+    assert.strictEqual(q1.find((s) => s.position === 'right_midfield').player.id, midLow.id, 'overriding to "right" should put the lower-average player on the right');
+    assert.strictEqual(q1.find((s) => s.position === 'left_midfield').player.id, midHigh.id);
+    const applied = result.sidePreferencesApplied.find((e) => e.role === 'midfielder');
+    assert.deepStrictEqual(applied, { role: 'midfielder', value: 'right', source: 'temporary' });
   });
 
   await t.test('sideOverrides "none" disables just that one role for this lineup, others still apply', () => {

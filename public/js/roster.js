@@ -24,6 +24,7 @@ const prefSelects = {
   midfielder: document.getElementById('roster-pref-midfielder'),
   forward: document.getElementById('roster-pref-forward'),
 };
+const formationSelect = document.getElementById('roster-formation');
 
 const SOCCER_AGENT_ID = 'soccer-lineup';
 let currentRoster = null;
@@ -212,6 +213,7 @@ async function loadRoster() {
     showStatus('', null);
     renderList();
     renderSidePreferences();
+    renderFormation();
   } catch {
     showStatus('Could not reach the server.', 'error');
   }
@@ -223,6 +225,37 @@ function renderSidePreferences() {
     prefSelects[role].value = prefs[role] || 'none';
   }
 }
+
+function renderFormation() {
+  formationSelect.value = currentRoster?.formation || '2-3-1';
+}
+
+// Auto-saves the moment the formation changes — same immediate-feedback
+// pattern as saveSidePreference below, through the same settings endpoint.
+async function saveFormation(formation) {
+  showStatus('Saving…', null);
+  try {
+    const res = await apiFetch('/api/soccer/roster/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formation }),
+    });
+    if (res.status === 401) {
+      window.location.href = '/';
+      return;
+    }
+    const data = await res.json();
+    if (!data.ok) {
+      showStatus(data.error || 'Could not save the formation.', 'error');
+      return;
+    }
+    if (currentRoster) currentRoster.formation = data.formation;
+    showStatus('Saved.', 'ok');
+  } catch {
+    showStatus('Could not reach the server.', 'error');
+  }
+}
+formationSelect.addEventListener('change', () => saveFormation(formationSelect.value));
 
 // Auto-saves the moment a select changes — no separate save button, same
 // as every other action in this panel giving immediate feedback. Only the

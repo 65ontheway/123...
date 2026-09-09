@@ -165,11 +165,14 @@ you'll get a local clarification request instead of a guess — again, before
 any AI call happens.
 
 Supported 7v7 formations: `2-3-1` (default), `3-2-1`, `2-2-2`, `3-1-2`. Set
-one as your roster's default in the panel, or name one per request ("set
-the lineup in a 3-2-1"). If a request can't be fully satisfied (two players
-pinned to the same slot in the same quarter, more players resting than the
-roster can cover, a position that doesn't exist in the chosen formation),
-the response explains what happened instead of silently guessing or
+your roster's default formation from the **Formation** dropdown in the
+roster panel — currently `2-3-1` is the only selectable option there, even
+though the scheduler itself already supports all four; the others are
+still only reachable by naming one in a chat request ("set the lineup in a
+3-2-1"). If a request can't be fully satisfied (two players pinned to the
+same slot in the same quarter, more players resting than the roster can
+cover, a position that doesn't exist in the chosen formation), the
+response explains what happened instead of silently guessing or
 substituting something else.
 
 ### Exact positions and formations
@@ -332,18 +335,31 @@ changes your saved defaults.
 
 **Position continuity within a game:** rotation history operates *across*
 games, but *within* one game the scheduler avoids needless reshuffling.
-If a player plays the same broad role (defender, or midfielder) in two
-quarters in a row, they stay at the exact same spot for the second one —
-left back both quarters rather than left back then right back, left wing
-both quarters rather than left wing then center mid — instead of getting
-moved to a different position in that same role just because a
-marginally different arrangement scored slightly higher. This is a
-deliberate trade-off: staying comfortable at one spot matters more than a
-small skill gain from reshuffling, even if it means a very slightly less
-optimal lineup. It only ever applies to a role that stays the same
-between the two quarters (a player switching from defense to midfield, or
-sitting out a quarter in between, isn't "two quarters in a row" and is
-left alone), and it never overrides an explicit pin.
+If a player plays midfielder in two quarters in a row, *within the same
+half* (quarter 1 into quarter 2, or quarter 3 into quarter 4 — never
+quarter 2 into quarter 3, which crosses the half boundary), they stay at
+the exact same spot for the second one — left wing both quarters rather
+than left wing then center mid — instead of getting moved to a different
+position in that same role just because a marginally different
+arrangement scored slightly higher. This is a deliberate trade-off:
+staying comfortable at one spot matters more than a small skill gain from
+reshuffling, even if it means a very slightly less optimal lineup. It
+only ever applies to midfield, and only within a half (a player switching
+roles, sitting out a quarter in between, or moving across the half
+boundary isn't "two quarters in a row" and is left alone), and it never
+overrides an explicit pin.
+
+**Weaker players at left wing, right back, and striker:** by default, the
+scheduler prefers routing the team's lower-skilled players into these
+three specific spots, in that priority order, whenever there's a genuine
+choice among players who are otherwise equally fair to play that quarter.
+It's a soft preference bounded the same way rotation variety is — it
+never reaches for a meaningfully less-suited candidate, never bumps
+someone out of a slot they're clearly better suited for, and never
+overrides whose turn it is to play under AYSO fairness. It wins over the
+left/right side-preference setting for those three specific slots (the
+same way an explicit pin does), since it's a more specific, deliberate
+placement.
 
 **Goalkeeper substitutions:** the goalkeeper for quarters 1 and 3 can come
 from anywhere, but the quarter 2 and quarter 4 goalkeeper is generally
@@ -731,17 +747,19 @@ suite is fictional. Coverage includes:
   roster without losing existing data, persisting a partial settings
   update while preserving the rest, the default-vs-temporary-vs-explicit-none
   resolution rules, and the side-assignment swap itself in isolation
-  (including exact-pin exclusion, equal-average stability, and the ignored
-  center slot).
+  (including exact-pin exclusion, weak-preference-placement exclusion,
+  equal-average stability, and the ignored center slot).
 - `test/soccerScheduling.test.js` — `computeGameLineup` end-to-end for
-  every formation: default side placement, exact-position pins honored
-  ahead of and never moved by generic role pins or side preferences,
-  this-lineup-only overrides (including "ignore all"), a saved default
-  picked up automatically, invalid/unrecognized positions and slot
-  conflicts explained rather than silently substituted, an exact pin still
-  able to override the AYSO fairness rule with a warning (unchanged
-  existing behavior), and confirmation that changing only a side
-  preference never changes who plays, the bench, or quarters-played totals.
+  every formation: default side placement, the weak-player preference
+  claiming left wing and right back ahead of side preference by default,
+  exact-position pins honored ahead of and never moved by generic role
+  pins or side preferences, this-lineup-only overrides (verified on a pair
+  the weak-player preference never touches), a saved default picked up
+  automatically, invalid/unrecognized positions and slot conflicts
+  explained rather than silently substituted, an exact pin still able to
+  override the AYSO fairness rule with a warning (unchanged existing
+  behavior), and confirmation that changing only a side preference never
+  changes who plays, the bench, or quarters-played totals.
 - `test/soccerPrivacy.test.js` — the name/label scrubbing module in
   isolation: whole-word matching, ambiguous shared-name detection, chat-
   based roster edits that never rename a player to their own label, and
@@ -785,9 +803,11 @@ suite is fictional. Coverage includes:
   left to choose between); and a player with heavy recent role/position
   history is picked into that role measurably less often than an otherwise
   identical, history-free teammate, without ever being penalized below a
-  neutral score for time spent on the bench; a player who plays the same
-  broad role two quarters in a row always keeps the exact same position;
-  and — using a fixture engineered so two equally-suited keepers are tied
+  neutral score for time spent on the bench; a player who plays midfielder
+  two quarters in a row, within the same half, always keeps the exact same
+  position, and continuity is confirmed to run exactly twice a game (after
+  Q1 and after Q3, never after Q2); and — using a fixture engineered so two
+  equally-suited keepers are tied
   in quarters played but differ in whether they were on the field the
   quarter before — the Q4 goalkeeper is drawn from whoever was off the
   field far more often than not, while Q3 (deliberately excluded from that
@@ -800,14 +820,17 @@ suite is fictional. Coverage includes:
   player who's already played goalkeeper and sat out a quarter rarely gets
   left to sit out a second one.
 - `test/soccerPositionContinuity.test.js` — the intra-game position-
-  continuity module in isolation: a same-role scramble (within defense, or
-  within midfield) across two consecutive quarters is restored to last
-  quarter's exact positions, including a three-way cycle; a ROLE CHANGE
-  between quarters is never corrected (continuity only ever applies to a
-  role staying the same); an exact or generic pin is never displaced in
-  either direction; a brand-new player or one who rested/was benched last
-  quarter has no continuity claim; and forward/goalkeeper slots are never
-  touched by it.
+  continuity module in isolation, scoped to midfielder only: a same-role
+  scramble within midfield across two consecutive quarters is restored to
+  last quarter's exact positions, including a three-way cycle, while the
+  identical scramble within defense is confirmed to never be restored (out
+  of scope entirely); a ROLE CHANGE between quarters is never corrected
+  (continuity only ever applies to a role staying the same); an exact or
+  generic pin is never displaced in either direction; a brand-new player or
+  one who rested/was benched last quarter has no continuity claim; and
+  forward/goalkeeper slots are never touched by it. (The within-half-only
+  gating — Q1→Q2 or Q3→Q4, never Q2→Q3 — lives in the caller, not this
+  module, and is covered instead in `test/soccerSchedulingVariety.test.js`.)
 - `test/soccerLineupHistory.test.js` — the private draft/game storage layer:
   a created draft's stored result matches what `computeGameLineup` produces
   for its recorded seed; reopening or listing a saved game never calls

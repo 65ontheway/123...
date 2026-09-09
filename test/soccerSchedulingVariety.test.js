@@ -126,10 +126,23 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
 
   await t.test('side preferences still apply exactly as configured when a seed is present', () => {
     const { roster, players } = buildRoster();
-    const result = soccerLineup.computeGameLineup(roster, { seed: 'side-pref-seed', sideOverrides: { defender: 'left' } });
+    const backA = players.find((p) => p.name === 'Fixture Back A'); // avg 3
+    const backB = players.find((p) => p.name === 'Fixture Back B'); // avg 2.5 (lower)
+    // Generic role pins (not exact positions) place both defenders without
+    // going through Pass 3's own automatic fill at all — right_back is a
+    // weak-player-preference slot (see soccerScheduling.test.js), so a
+    // natural, unpinned fill wouldn't cleanly isolate side-assignment's own
+    // behavior here. This mirrors the same pinning pattern
+    // soccerScheduling.test.js's "a generic role pin still lets the side-
+    // assignment step place the exact side" test already uses.
+    const result = soccerLineup.computeGameLineup(roster, {
+      seed: 'side-pref-seed',
+      sideOverrides: { defender: 'left' },
+      pinned: { 1: { [backA.id]: 'defender', [backB.id]: 'defender' } },
+    });
     const leftBack = result.quarters[0].lineup.find((s) => s.position === 'left_back');
     // Fixture Back B (avg 2.5) is lower than Fixture Back A (avg 3) -> should land on the overridden "left" side.
-    assert.strictEqual(leftBack.player.id, players.find((p) => p.name === 'Fixture Back B').id);
+    assert.strictEqual(leftBack.player.id, backB.id);
   });
 
   await t.test('rotationInfluenced is false when every slot is exactly pinned (nothing left for Pass 3 to choose between)', () => {
@@ -172,21 +185,27 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
     });
     const rotationStatsData = { windowSize: 4, gamesConsidered: 3, statsByPlayerId };
 
-    // Counted across every midfield slot in every quarter (not just one
-    // exact position) since which of several tied candidates fills which
-    // specific slot in a given quarter also depends on fill order within
-    // that quarter — summing over the whole role is what isolates the
-    // rotation-history bias itself from that ordering noise.
+    // Counted across center_mid and right_wing in every quarter (not just
+    // one exact position) since which of several tied candidates fills
+    // which specific slot in a given quarter also depends on fill order
+    // within that quarter — summing over both is what isolates the
+    // rotation-history bias itself from that ordering noise. left_wing is
+    // deliberately excluded: it's a weak-player-preference slot (see
+    // soccerScheduling.test.js), which breaks ties on skill, not
+    // rotation freshness, so it would never reflect this bias at all.
+    // Excluding left_wing also thins the sample (2 slots instead of 3), so
+    // this needs more iterations than before to clear the noise floor —
+    // empirically, 40 was no longer reliably enough on its own.
     let midATotal = 0;
     let midBTotal = 0;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 200; i++) {
       const result = soccerLineup.computeGameLineup(roster, {
         seed: `history-seed-${i}`,
         rotationStatsData,
       });
       for (const q of result.quarters) {
         for (const slot of q.lineup) {
-          if (slot.role !== 'midfielder' || !slot.player) continue;
+          if (slot.role !== 'midfielder' || slot.position === 'left_wing' || !slot.player) continue;
           if (slot.player.id === midA.id) midATotal += 1;
           if (slot.player.id === midB.id) midBTotal += 1;
         }
@@ -209,30 +228,48 @@ test('soccerScheduling.js: seeded variety and rotation', async (t) => {
     assert.strictEqual(rotationStats.rotationScoreFor(heavilyBenched.id, 'midfielder', 'center_mid', stats), 0);
   });
 
-  await t.test('a player who plays the same broad role (defender or midfielder) two quarters in a row keeps the exact same position', () => {
+  await t.test('a player who plays midfielder two quarters in a row, within the same half, keeps the exact same position', () => {
     const { roster } = buildRoster();
     for (let i = 0; i < 20; i++) {
       const result = soccerLineup.computeGameLineup(roster, { seed: `continuity-integration-${i}` });
       for (let qi = 1; qi < result.quarters.length; qi++) {
+        const withinHalf = qi === 1 || qi === 3; // Q1->Q2 or Q3->Q4 only, never Q2->Q3
         const previousByPlayerId = new Map();
         for (const s of result.quarters[qi - 1].lineup) {
-          if (s.player && (s.role === 'defender' || s.role === 'midfielder')) {
+          if (s.player && s.role === 'midfielder') {
             previousByPlayerId.set(s.player.id, { role: s.role, position: s.position });
           }
         }
         for (const s of result.quarters[qi].lineup) {
           if (!s.player) continue;
           const previous = previousByPlayerId.get(s.player.id);
-          if (previous && previous.role === s.role) {
+          if (withinHalf && previous && previous.role === s.role) {
             assert.strictEqual(
               s.position,
               previous.position,
-              `seed ${i} Q${qi + 1}: ${s.player.name} played ${previous.role} last quarter too — must stay at ${previous.position}`
+              `seed ${i} Q${qi + 1}: ${s.player.name} played midfielder last quarter too, within the same half — must stay at ${previous.position}`
             );
           }
         }
       }
     }
+  });
+
+  await t.test('continuity is only invoked for a within-half transition (Q1->Q2 and Q3->Q4), never Q2->Q3', () => {
+    const { roster } = buildRoster();
+    const positionContinuity = require('../lib/soccerPositionContinuity');
+    const original = positionContinuity.applyPositionContinuity;
+    let callCount = 0;
+    positionContinuity.applyPositionContinuity = (...args) => {
+      callCount += 1;
+      return original(...args);
+    };
+    try {
+      soccerLineup.computeGameLineup(roster, { seed: 'continuity-gating-check' });
+    } finally {
+      positionContinuity.applyPositionContinuity = original;
+    }
+    assert.strictEqual(callCount, 2, 'continuity should run exactly twice per game — once after Q1 (for Q2) and once after Q3 (for Q4) — never after Q2');
   });
 
   await t.test('the Q4 goalkeeper is drawn from whoever was off the field in Q3 far more often than whoever was already playing, when both are tied and suitable', () => {
