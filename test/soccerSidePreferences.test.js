@@ -114,6 +114,18 @@ test('soccerSidePreferences.js', async (t) => {
     assert.strictEqual(lineup[1].player, otherPlayer);
   });
 
+  await t.test('applySideAssignment never moves a weak-preference-placed player, even against the preference', () => {
+    const weakPlacedPlayer = playerWith(1, 5); // lower average, "wrong" side for this preference
+    const otherPlayer = playerWith(5, 4);
+    const lineup = [
+      { position: 'left_back', role: 'defender', player: weakPlacedPlayer, pinKind: null, weakPreference: true },
+      { position: 'right_back', role: 'defender', player: otherPlayer, pinKind: null, weakPreference: false },
+    ];
+    sidePrefs.applySideAssignment('2-3-1', lineup, { defender: { value: 'right', source: 'default' } });
+    assert.strictEqual(lineup[0].player, weakPlacedPlayer, 'a weak-preference placement must never move, same as an exact pin');
+    assert.strictEqual(lineup[1].player, otherPlayer);
+  });
+
   await t.test('applySideAssignment leaves equal averages exactly as they were (stable, no swap)', () => {
     const left = playerWith(3, 3);
     const right = playerWith(2, 4); // same average (3), different raw skills
