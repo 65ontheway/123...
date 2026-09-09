@@ -437,7 +437,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     assert.equal(history.listGames('conversationCoach').length, 0);
   });
 
-  await t.test('a conversational draft proposal waits for confirmation', async () => {
+  await t.test('a conversational draft proposal executes immediately, without confirmation', async () => {
     seedRoster('conversationProposalCoach');
     nextResponse = { toolCall: { name: 'set_game_lineup', args: { date: '2024-09-01' } } };
     const res = makeMockRes();
@@ -446,8 +446,8 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
       selectedModel: 'test/model', maxTokens: 1000, apiKey: 'test-key',
       username: 'conversationProposalCoach', ownerId: 'conversationProposalCoach', appUrl: 'http://localhost', session: {},
     });
-    assert.ok(res.fullText.includes('confirmation'));
-    assert.equal(history.listGames('conversationProposalCoach').length, 0);
+    assert.ok(!res.fullText.includes('"confirmation"'), 'set_game_lineup should execute immediately, with no confirm step');
+    assert.equal(history.listGames('conversationProposalCoach').length, 1, 'the draft should actually have been created');
   });
 
   await t.test('a partially-invalid multi-tool-call batch executes the valid parts and reports the specific problem for the rest', async () => {
@@ -475,7 +475,7 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     assert.ok(res.fullText.includes('could not be completed'), 'the reply should explain the specific problem with the invalid part, not a generic whole-turn rejection');
   });
 
-  await t.test('generate_lineup_alternative never requires confirmation, even from free-form conversation, while set_game_lineup still does', async () => {
+  await t.test('generate_lineup_alternative never requires confirmation, even from free-form conversation', async () => {
     const { roster } = seedRoster('conversationAltCoach');
     const created = await history.withLineupLock('conversationAltCoach', () => history.createGame('conversationAltCoach', roster, {}));
 
@@ -489,6 +489,22 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     assert.ok(!res.fullText.includes('"confirmation"'), 'generate_lineup_alternative should execute immediately, with no confirm step');
     const reopened = history.getGame('conversationAltCoach', created.gameId);
     assert.strictEqual(reopened.draftOrder.length, 2, 'the alternative should have actually been generated, not just proposed and left waiting');
+  });
+
+  await t.test('a conversational roster edit still waits for confirmation — the one action with no undo anywhere in the app', async () => {
+    const { roster, nova } = seedRoster('conversationRosterCoach');
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const label = ctx.labelByPlayerId.get(nova.id);
+    nextResponse = { toolCall: { name: 'manage_roster', args: { remove: [label] } } };
+    const res = makeMockRes();
+    await runChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Remove Fixture Nova from the roster.' }],
+      selectedModel: 'test/model', maxTokens: 1000, apiKey: 'test-key',
+      username: 'conversationRosterCoach', ownerId: 'conversationRosterCoach', appUrl: 'http://localhost', session: {},
+    });
+    assert.ok(res.fullText.includes('"confirmation"'), 'a roster edit must still require confirmation, unlike lineup/settings actions');
+    const stillThere = soccerLineup.loadRoster('conversationRosterCoach').players.find((p) => p.id === nova.id);
+    assert.ok(stillThere, 'nothing should be removed until the confirmation is accepted');
   });
 
   await t.test('a plain question with no action needed makes no lineup-history writes and carries no delta.lineup', async () => {
