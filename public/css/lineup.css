@@ -62,19 +62,50 @@
   font-size: 12px;
   margin-bottom: 4px;
 }
-.lineup-slots {
+.lineup-field-wrap {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  justify-content: center;
 }
-.lineup-slot {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12.5px;
+.lineup-field {
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 100 / 108;
 }
-.lineup-slot-pos { color: var(--muted); }
-.lineup-slot-name { font-weight: 600; text-align: right; }
+.field-turf { fill: #2e8b4e; }
+.field-boundary { fill: none; stroke: rgba(255, 255, 255, 0.85); stroke-width: 0.6; }
+.field-marking { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 0.5; }
+.field-marking-line { stroke: rgba(255, 255, 255, 0.55); stroke-width: 0.5; }
+.field-chip { fill: var(--accent); stroke: #fff; stroke-width: 0.8; }
+.field-slot-empty .field-chip { fill: rgba(255, 255, 255, 0.25); stroke-dasharray: 1.2; }
+.field-chip-pos {
+  font-size: 4.2px;
+  font-weight: 700;
+  fill: #fff;
+  text-anchor: middle;
+  pointer-events: none;
+}
+.field-chip-label {
+  font-size: 4.6px;
+  font-weight: 600;
+  fill: #fff;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 1.4px;
+  stroke-linejoin: round;
+  text-anchor: middle;
+  pointer-events: none;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .lineup-bench {
   margin-top: 6px;
   font-size: 12px;

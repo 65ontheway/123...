@@ -24,6 +24,104 @@ function formatPositionLabel(positionId) {
     .join(' ');
 }
 
+// Where each exact position sits on the pitch, as a percentage of the
+// field's width/height (0,0 top-left; attacking end at the top, goalkeeper
+// at the bottom). One shared table works for every formation the app
+// supports — a given position id (e.g. "left_back") always means the same
+// role/side no matter which formation it belongs to, so this never needs
+// to branch on formation name.
+const POSITION_COORDS = {
+  goalkeeper: { x: 50, y: 90 },
+  left_back: { x: 18, y: 70 },
+  center_back: { x: 50, y: 73 },
+  right_back: { x: 82, y: 70 },
+  left_wing: { x: 14, y: 38 },
+  center_mid: { x: 50, y: 42 },
+  right_wing: { x: 86, y: 38 },
+  left_midfield: { x: 26, y: 40 },
+  right_midfield: { x: 74, y: 40 },
+  striker: { x: 50, y: 12 },
+  left_forward: { x: 30, y: 12 },
+  right_forward: { x: 70, y: 12 },
+};
+
+const POSITION_ABBREV = {
+  goalkeeper: 'GK',
+  left_back: 'LB',
+  center_back: 'CB',
+  right_back: 'RB',
+  left_wing: 'LW',
+  center_mid: 'CM',
+  right_wing: 'RW',
+  left_midfield: 'LM',
+  right_midfield: 'RM',
+  striker: 'ST',
+  left_forward: 'LF',
+  right_forward: 'RF',
+};
+
+// A jersey-style chip has little room for a full name — first name only
+// (how a coach naturally refers to their own players) keeps it readable.
+function shortDisplayName(name) {
+  if (!name) return '';
+  const first = name.trim().split(/\s+/)[0];
+  return first.length > 12 ? `${first.slice(0, 11)}…` : first;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+// One quarter's lineup, drawn as a small pitch diagram — a coach reads a
+// shape on a field far faster than a list of position names. The SVG
+// itself is decorative (aria-hidden); a plain-text equivalent right below
+// it (visually hidden, not display:none, so it stays in the accessibility
+// tree) keeps this exactly as usable for a screen reader as the original
+// text list was.
+function renderField(lineup) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lineup-field-wrap';
+
+  // The viewBox is taller than the pitch itself (108 vs. the pitch's own
+  // 96-tall 2..98 span) so the goalkeeper's name label — anchored below a
+  // chip sitting right at the bottom edge of the pitch — has room to
+  // render without being clipped by the SVG's own boundary.
+  const svg = svgEl('svg', { viewBox: '0 0 100 108', class: 'lineup-field', 'aria-hidden': 'true', focusable: 'false' });
+  svg.appendChild(svgEl('rect', { x: 2, y: 2, width: 96, height: 96, rx: 4, class: 'field-turf' }));
+  svg.appendChild(svgEl('rect', { x: 25, y: 2, width: 50, height: 12, class: 'field-marking' }));
+  svg.appendChild(svgEl('rect', { x: 25, y: 86, width: 50, height: 12, class: 'field-marking' }));
+  svg.appendChild(svgEl('line', { x1: 2, y1: 50, x2: 98, y2: 50, class: 'field-marking-line' }));
+  svg.appendChild(svgEl('circle', { cx: 50, cy: 50, r: 9, class: 'field-marking' }));
+  svg.appendChild(svgEl('rect', { x: 2, y: 2, width: 96, height: 96, rx: 4, class: 'field-boundary' }));
+
+  for (const slot of lineup) {
+    const coords = POSITION_COORDS[slot.position] || { x: 50, y: 50 };
+    const filled = !!slot.player;
+    const g = svgEl('g', { class: filled ? 'field-slot' : 'field-slot field-slot-empty' });
+    g.appendChild(svgEl('circle', { cx: coords.x, cy: coords.y, r: 6.5, class: 'field-chip' }));
+    const abbrev = svgEl('text', { x: coords.x, y: coords.y + 1.6, class: 'field-chip-pos', 'text-anchor': 'middle' });
+    abbrev.textContent = POSITION_ABBREV[slot.position] || '';
+    g.appendChild(abbrev);
+    const label = svgEl('text', { x: coords.x, y: coords.y + 11.5, class: 'field-chip-label', 'text-anchor': 'middle' });
+    label.textContent = filled ? shortDisplayName(slot.player.name) : '(unfilled)';
+    g.appendChild(label);
+    svg.appendChild(g);
+  }
+  wrap.appendChild(svg);
+
+  const srSummary = document.createElement('p');
+  srSummary.className = 'sr-only';
+  srSummary.textContent = lineup
+    .map((slot) => `${formatPositionLabel(slot.position)}: ${slot.player ? slot.player.name : 'unfilled'}`)
+    .join('. ');
+  wrap.appendChild(srSummary);
+
+  return wrap;
+}
+
 function statusLabel(status) {
   return status === 'finalized' ? 'Finalized' : 'Draft';
 }
@@ -86,21 +184,7 @@ function renderQuarters(el, game) {
     h.textContent = `Quarter ${q.quarter}`;
     qDiv.appendChild(h);
 
-    const list = document.createElement('div');
-    list.className = 'lineup-slots';
-    for (const slot of q.lineup) {
-      const row = document.createElement('div');
-      row.className = 'lineup-slot';
-      const pos = document.createElement('span');
-      pos.className = 'lineup-slot-pos';
-      pos.textContent = formatPositionLabel(slot.position);
-      const name = document.createElement('span');
-      name.className = 'lineup-slot-name';
-      name.textContent = slot.player ? slot.player.name : '(unfilled)';
-      row.append(pos, name);
-      list.appendChild(row);
-    }
-    qDiv.appendChild(list);
+    qDiv.appendChild(renderField(q.lineup));
 
     if (q.bench.length > 0) {
       const bench = document.createElement('div');

@@ -102,8 +102,13 @@ tied to any one chat):
 
 Select **Soccer Lineup** from the Agent dropdown. Chat supports natural conversation, strategy questions, and follow-ups.
 Current roster names are replaced in conversation text before provider calls;
-other identifying details may remain. Conversational action proposals always
-require confirmation, including creation of a draft.
+other identifying details may remain. Creating, regenerating, or finalizing a
+lineup, and saving default settings, all run immediately — no confirm step,
+since every one of those is cheap to reverse through the app's own UI (a new
+draft never deletes an older one, finalizing has its own "Undo" button, and a
+saved setting can just be changed back). A roster edit (rename, re-rate, or
+remove a player) is the one action that still requires confirmation first:
+it's the only one with no undo anywhere in the app.
 Describe what you want
 in plain English — e.g. "Rest Emma the first half, put Sarah at left back in
 the third quarter." The model doesn't schedule the game itself: it only
@@ -438,7 +443,13 @@ told the app about actual in-game substitutions separately.
 The lineup card (in chat, and when you reopen an old conversation) always
 shows: draft vs. finalized status, the game date, whether recent history
 actually influenced this particular option, and — if variety was limited
-(e.g. by exact pins or a small roster) — a short note saying so.
+(e.g. by exact pins or a small roster) — a short note saying so. Each
+quarter is drawn as a small pitch diagram — goalkeeper at the bottom,
+defenders/midfielders/forwards laid out in their actual formation shape,
+each player's first name on their spot — rather than a plain position/name
+list; the bench for that quarter is still listed as text underneath. The
+same position-coordinate table covers every supported formation, so this
+never needs formation-specific layout logic.
 
 If the roster has changed since a draft was generated, the app tells you
 rather than silently rescheduling against different players; use the
@@ -520,9 +531,10 @@ Recognized complete commands use minimal current-command context. Natural
 conversation sends filtered user/assistant text history, pseudonymous roster
 ratings, and the selected saved lineup when available. Standing facts,
 attachments and client system messages are excluded. Soccer titles remain
-local. All actions proposed through natural conversation require confirmation;
-validated complete commands retain their existing confirmation rules.
-The scheduler and fairness/coaching rules are unchanged.
+local. A roster edit proposed through either path — natural conversation or a
+recognized complete command — requires confirmation; every other action
+(creating, regenerating, or finalizing a lineup, saving default settings)
+runs immediately. The scheduler and fairness/coaching rules are unchanged.
 
 Pseudonyms are not anonymity: ratings and scheduling constraints can still
 be identifying when correlated with outside information. Regular expressions
@@ -532,10 +544,9 @@ General Assistant sends the messages and attachments in its own conversation
 to the provider. It never inherits a soccer conversation when switching agents.
 
 The model's proposed actions are validated in application code. Unknown tools
-are rejected. Roster edits, saved preferences, alternative generation and
-finalization show a concrete, expiring confirmation before running. Confirming
-once consumes the proposal; a changed roster/selected option invalidates it.
-New drafts are reversible and may be created directly from a scheduling request.
+are rejected. Only a roster edit shows a concrete, expiring confirmation
+before running — everything else executes immediately (see above). Confirming
+once consumes the proposal; a changed roster invalidates it.
 Failures report what was saved; combined actions are not a database transaction.
 
 ### Local hosting and limits
