@@ -16,7 +16,7 @@ const { validateMessages, validDate } = require('../lib/validation');
 const { controlledRequest } = require('../lib/soccerRequest');
 const soccer = require('../lib/soccerLineup');
 const privacy = require('../lib/soccerPrivacy');
-const { validateToolCalls } = require('../lib/toolValidation');
+const { validateToolCalls, validateToolCallsDetailed } = require('../lib/toolValidation');
 const { generateExport } = require('../lib/export');
 const exportsStore = require('../lib/exportStore');
 
@@ -84,6 +84,20 @@ test('security and failure boundaries with isolated fictional fixtures', async t
     assert.equal(validateToolCalls([call('set_game_lineup', { resting: { 5: [] } })], tools), false);
     assert.equal(validateToolCalls([call('set_game_lineup', {})], tools), true);
     assert.equal(validateToolCalls([call('set_game_lineup', {}), { ...call('set_game_lineup', {}), id: 'two' }], tools), false);
+  });
+  await t.test('validateToolCallsDetailed reports which specific call in a batch failed and why, without invalidating the rest', () => {
+    const call = (id, name, args) => ({ id, function: { name, arguments: JSON.stringify(args) } });
+    const tools = [soccer.SET_GAME_LINEUP_TOOL];
+    const results = validateToolCallsDetailed([call('a', 'set_game_lineup', {}), call('b', 'set_game_lineup', { date: '2025-02-30' })], tools);
+    assert.equal(results[0].valid, true);
+    assert.equal(results[1].valid, false);
+    assert.ok(results[1].reason.includes('date'));
+    const duplicateOp = validateToolCallsDetailed([call('a', 'set_game_lineup', {}), call('b', 'set_game_lineup', {})], tools);
+    assert.equal(duplicateOp[0].valid, true);
+    assert.equal(duplicateOp[1].valid, false);
+    const duplicateId = validateToolCallsDetailed([call('same', 'set_game_lineup', { date: '2024-09-01' }), call('same', 'set_game_lineup', { date: '2024-09-02' })], tools);
+    assert.equal(duplicateId[0].valid, true);
+    assert.equal(duplicateId[1].valid, false);
   });
   await t.test('export ownership and formula handling', async () => {
     const generated = await generateExport({ format: 'csv', filename: 'fixture', rows: [['=SUM(A1)', '\t=1', '@SUM(A1)', 4]] });

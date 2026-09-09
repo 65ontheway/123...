@@ -450,6 +450,47 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     assert.equal(history.listGames('conversationProposalCoach').length, 0);
   });
 
+  await t.test('a partially-invalid multi-tool-call batch executes the valid parts and reports the specific problem for the rest', async () => {
+    const { roster } = seedRoster('chatCoachPartial');
+    const created = await history.withLineupLock('chatCoachPartial', () => history.createGame('chatCoachPartial', roster, {}));
+
+    nextResponse = {
+      toolCalls: [
+        { name: 'finalize_lineup', args: { gameId: created.gameId } },
+        { name: 'set_game_lineup', args: { resting: { 5: [] } } },
+      ],
+    };
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Use this lineup, and also set one up resting someone in quarter 5.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'chatCoachPartial',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assert.strictEqual(history.getGame('chatCoachPartial', created.gameId).status, 'finalized', 'the valid finalize_lineup call must still execute');
+    assert.strictEqual(history.listGames('chatCoachPartial').length, 1, 'the invalid set_game_lineup call must not create a new game');
+    assert.ok(res.fullText.includes('could not be completed'), 'the reply should explain the specific problem with the invalid part, not a generic whole-turn rejection');
+  });
+
+  await t.test('generate_lineup_alternative never requires confirmation, even from free-form conversation, while set_game_lineup still does', async () => {
+    const { roster } = seedRoster('conversationAltCoach');
+    const created = await history.withLineupLock('conversationAltCoach', () => history.createGame('conversationAltCoach', roster, {}));
+
+    nextResponse = { toolCall: { name: 'generate_lineup_alternative', args: { gameId: created.gameId } } };
+    const res = makeMockRes();
+    await runChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Could you give me a different option for this one?' }],
+      selectedModel: 'test/model', maxTokens: 1000, apiKey: 'test-key',
+      username: 'conversationAltCoach', ownerId: 'conversationAltCoach', gameId: created.gameId, appUrl: 'http://localhost', session: {},
+    });
+    assert.ok(!res.fullText.includes('"confirmation"'), 'generate_lineup_alternative should execute immediately, with no confirm step');
+    const reopened = history.getGame('conversationAltCoach', created.gameId);
+    assert.strictEqual(reopened.draftOrder.length, 2, 'the alternative should have actually been generated, not just proposed and left waiting');
+  });
+
   await t.test('a plain question with no action needed makes no lineup-history writes and carries no delta.lineup', async () => {
     seedRoster('chatCoachH');
     nextResponse = { content: 'Sure — happy to help with that.' };
