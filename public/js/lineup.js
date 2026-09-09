@@ -81,36 +81,95 @@ function svgEl(tag, attrs) {
 // it (visually hidden, not display:none, so it stays in the accessibility
 // tree) keeps this exactly as usable for a screen reader as the original
 // text list was.
+//
+// Every visual attribute here (fill, stroke, font-size) is set directly on
+// the SVG elements rather than left to the external stylesheet, and the
+// SVG itself carries explicit width/height="100%" rather than relying on
+// CSS aspect-ratio applied to the <svg> replaced element directly (a
+// wrapping div carries the aspect-ratio instead) — both are deliberate,
+// since a dynamically created SVG subtree sizing or coloring itself off an
+// external stylesheet has turned out to be unreliable in at least one real
+// browser, and an unstyled SVG shape defaults to a solid black fill, which
+// reads as a broken render rather than a merely unstyled one.
+const FIELD_GREEN = '#2e8b4e';
+const FIELD_LINE = 'rgba(255,255,255,0.55)';
+const FIELD_BOUNDARY = 'rgba(255,255,255,0.85)';
+const CHIP_FILL = '#2f6fed';
+const CHIP_EMPTY_FILL = 'rgba(255,255,255,0.3)';
+
 function renderField(lineup) {
   const wrap = document.createElement('div');
   wrap.className = 'lineup-field-wrap';
+
+  const frame = document.createElement('div');
+  frame.className = 'lineup-field-frame';
+  wrap.appendChild(frame);
 
   // The viewBox is taller than the pitch itself (108 vs. the pitch's own
   // 96-tall 2..98 span) so the goalkeeper's name label — anchored below a
   // chip sitting right at the bottom edge of the pitch — has room to
   // render without being clipped by the SVG's own boundary.
-  const svg = svgEl('svg', { viewBox: '0 0 100 108', class: 'lineup-field', 'aria-hidden': 'true', focusable: 'false' });
-  svg.appendChild(svgEl('rect', { x: 2, y: 2, width: 96, height: 96, rx: 4, class: 'field-turf' }));
-  svg.appendChild(svgEl('rect', { x: 25, y: 2, width: 50, height: 12, class: 'field-marking' }));
-  svg.appendChild(svgEl('rect', { x: 25, y: 86, width: 50, height: 12, class: 'field-marking' }));
-  svg.appendChild(svgEl('line', { x1: 2, y1: 50, x2: 98, y2: 50, class: 'field-marking-line' }));
-  svg.appendChild(svgEl('circle', { cx: 50, cy: 50, r: 9, class: 'field-marking' }));
-  svg.appendChild(svgEl('rect', { x: 2, y: 2, width: 96, height: 96, rx: 4, class: 'field-boundary' }));
+  const svg = svgEl('svg', {
+    viewBox: '0 0 100 108',
+    width: '100%',
+    height: '100%',
+    preserveAspectRatio: 'xMidYMid meet',
+    'aria-hidden': 'true',
+    focusable: 'false',
+  });
+  svg.style.display = 'block';
+  frame.appendChild(svg);
+
+  const turf = svgEl('rect', { x: 2, y: 2, width: 96, height: 96, rx: 4, fill: FIELD_GREEN });
+  svg.appendChild(turf);
+  for (const attrs of [
+    { x: 25, y: 2, width: 50, height: 12 },
+    { x: 25, y: 86, width: 50, height: 12 },
+  ]) {
+    svg.appendChild(svgEl('rect', { ...attrs, fill: 'none', stroke: FIELD_LINE, 'stroke-width': 0.5 }));
+  }
+  svg.appendChild(svgEl('line', { x1: 2, y1: 50, x2: 98, y2: 50, stroke: FIELD_LINE, 'stroke-width': 0.5 }));
+  svg.appendChild(svgEl('circle', { cx: 50, cy: 50, r: 9, fill: 'none', stroke: FIELD_LINE, 'stroke-width': 0.5 }));
+  svg.appendChild(svgEl('rect', { x: 2, y: 2, width: 96, height: 96, rx: 4, fill: 'none', stroke: FIELD_BOUNDARY, 'stroke-width': 0.6 }));
 
   for (const slot of lineup) {
     const coords = POSITION_COORDS[slot.position] || { x: 50, y: 50 };
     const filled = !!slot.player;
-    const g = svgEl('g', { class: filled ? 'field-slot' : 'field-slot field-slot-empty' });
-    g.appendChild(svgEl('circle', { cx: coords.x, cy: coords.y, r: 6.5, class: 'field-chip' }));
-    const abbrev = svgEl('text', { x: coords.x, y: coords.y + 1.6, class: 'field-chip-pos', 'text-anchor': 'middle' });
+    const g = svgEl('g', {});
+
+    const chip = svgEl('circle', {
+      cx: coords.x,
+      cy: coords.y,
+      r: 6.5,
+      fill: filled ? CHIP_FILL : CHIP_EMPTY_FILL,
+      stroke: '#fff',
+      'stroke-width': filled ? 0.8 : 0.6,
+    });
+    if (!filled) chip.setAttribute('stroke-dasharray', '1.2');
+    g.appendChild(chip);
+
+    const abbrev = svgEl('text', { x: coords.x, y: coords.y + 1.6, 'text-anchor': 'middle', fill: '#fff' });
+    abbrev.style.fontSize = '4.2px';
+    abbrev.style.fontWeight = '700';
     abbrev.textContent = POSITION_ABBREV[slot.position] || '';
     g.appendChild(abbrev);
-    const label = svgEl('text', { x: coords.x, y: coords.y + 11.5, class: 'field-chip-label', 'text-anchor': 'middle' });
+
+    const label = svgEl('text', {
+      x: coords.x,
+      y: coords.y + 11.5,
+      'text-anchor': 'middle',
+      fill: '#fff',
+      stroke: 'rgba(0,0,0,0.55)',
+      'stroke-width': 1.4,
+    });
+    label.style.fontSize = '4.6px';
+    label.style.fontWeight = '600';
+    label.style.paintOrder = 'stroke';
     label.textContent = filled ? shortDisplayName(slot.player.name) : '(unfilled)';
     g.appendChild(label);
+
     svg.appendChild(g);
   }
-  wrap.appendChild(svg);
 
   const srSummary = document.createElement('p');
   srSummary.className = 'sr-only';

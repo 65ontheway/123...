@@ -62,38 +62,19 @@
   font-size: 12px;
   margin-bottom: 4px;
 }
+/* The pitch diagram's own colors/sizes are all set as inline SVG
+   attributes in lineup.js, not here — a dynamically created SVG subtree
+   depending on this stylesheet having already applied turned out to be
+   unreliable in at least one real browser. This file only ever positions
+   and sizes the wrapping frame around it. */
 .lineup-field-wrap {
   display: flex;
   justify-content: center;
 }
-.lineup-field {
+.lineup-field-frame {
   width: 100%;
   max-width: 320px;
   aspect-ratio: 100 / 108;
-}
-.field-turf { fill: #2e8b4e; }
-.field-boundary { fill: none; stroke: rgba(255, 255, 255, 0.85); stroke-width: 0.6; }
-.field-marking { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 0.5; }
-.field-marking-line { stroke: rgba(255, 255, 255, 0.55); stroke-width: 0.5; }
-.field-chip { fill: var(--accent); stroke: #fff; stroke-width: 0.8; }
-.field-slot-empty .field-chip { fill: rgba(255, 255, 255, 0.25); stroke-dasharray: 1.2; }
-.field-chip-pos {
-  font-size: 4.2px;
-  font-weight: 700;
-  fill: #fff;
-  text-anchor: middle;
-  pointer-events: none;
-}
-.field-chip-label {
-  font-size: 4.6px;
-  font-weight: 600;
-  fill: #fff;
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.55);
-  stroke-width: 1.4px;
-  stroke-linejoin: round;
-  text-anchor: middle;
-  pointer-events: none;
 }
 .sr-only {
   position: absolute;
