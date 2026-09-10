@@ -288,6 +288,26 @@
   margin-top: 4px;
 }
 
+.roster-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.roster-backup-actions button {
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.roster-backup-actions button:hover { background: var(--bubble-assistant); }
+.roster-backup-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 768px) {
   #roster-panel { width: 100%; max-width: 100%; }
   .roster-player-actions button,
@@ -307,5 +327,12 @@
   }
   .roster-side-pref-row select {
     width: 100%;
+  }
+  .roster-backup-actions {
+    flex-direction: column;
+  }
+  .roster-backup-actions button {
+    width: 100%;
+    min-height: 44px;
   }
 }

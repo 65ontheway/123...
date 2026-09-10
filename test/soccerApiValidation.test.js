@@ -56,4 +56,40 @@ test('soccerApiValidation.js: validateSoccer', async (t) => {
     const result = run('POST', '/games', { formation: '2-3-1' });
     assert.strictEqual(result.nextCalled, true, 'set_game_lineup already supports formation on its own — this should still pass');
   });
+
+  await t.test('a roster/import POST accepts a well-formed backup (nested skills, as exported)', () => {
+    const result = run('POST', '/roster/import', {
+      formation: '2-3-1',
+      players: [{ id: 'x', name: 'Fixture Nova', skills: { offense: 3, defense: 4, goalie: 1 } }],
+    });
+    assert.strictEqual(result.nextCalled, true);
+  });
+
+  await t.test('a roster/import POST rejects a player missing the nested skills object', () => {
+    const result = run('POST', '/roster/import', { players: [{ name: 'Fixture Nova', offense: 3, defense: 4, goalie: 1 }] });
+    assert.strictEqual(result.nextCalled, false);
+    assert.strictEqual(result.statusCode, 400);
+  });
+
+  await t.test('a roster/import POST rejects an out-of-range rating inside skills', () => {
+    const result = run('POST', '/roster/import', {
+      players: [{ name: 'Fixture Nova', skills: { offense: 9, defense: 4, goalie: 1 } }],
+    });
+    assert.strictEqual(result.nextCalled, false);
+    assert.strictEqual(result.statusCode, 400);
+  });
+
+  await t.test('a roster/import POST passes an unrecognized formation string through to the route to fall back on, unlike roster/settings', () => {
+    const result = run('POST', '/roster/import', {
+      formation: 'not-a-real-formation',
+      players: [{ name: 'Fixture Nova', skills: { offense: 3, defense: 4, goalie: 1 } }],
+    });
+    assert.strictEqual(result.nextCalled, true, 'schema-level rejection here would prevent the graceful default-formation fallback the route implements');
+  });
+
+  await t.test('a roster/import POST requires players to be present at all', () => {
+    const result = run('POST', '/roster/import', { formation: '2-3-1' });
+    assert.strictEqual(result.nextCalled, false);
+    assert.strictEqual(result.statusCode, 400);
+  });
 });
