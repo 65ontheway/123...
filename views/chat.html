@@ -101,59 +101,67 @@
     </div>
     <p id="roster-storage-note" class="roster-storage-note"></p>
     <p id="roster-status" class="roster-status" hidden></p>
-    <section id="roster-backup-section" class="roster-side-preferences">
-      <h3>Backup</h3>
-      <p class="roster-side-preferences-hint">
-        Download a copy of your roster to keep somewhere else too. Restoring replaces every player currently on
-        your roster with what's in the file.
-      </p>
-      <div class="roster-backup-actions">
-        <button type="button" id="roster-backup-download">⬇️ Download backup</button>
-        <button type="button" id="roster-backup-restore-btn">⬆️ Restore from backup</button>
-        <input type="file" id="roster-backup-restore-input" accept="application/json,.json" hidden />
-      </div>
-    </section>
-    <section id="roster-formation-section" class="roster-side-preferences">
-      <h3>Formation</h3>
-      <label class="roster-side-pref-row">
-        Formation
-        <select id="roster-formation">
-          <option value="2-3-1">2-3-1</option>
-        </select>
-      </label>
-    </section>
-    <section id="roster-side-preferences" class="roster-side-preferences">
-      <h3>Side preferences</h3>
-      <p class="roster-side-preferences-hint">
-        Which side gets the lower-average player (offense/defense averaged) by default. Applies to every new
-        lineup unless a chat request says otherwise for that one game.
-      </p>
-      <label class="roster-side-pref-row">
-        Lower-average defender
-        <select id="roster-pref-defender">
-          <option value="none">No preference</option>
-          <option value="left">Left side</option>
-          <option value="right">Right side</option>
-        </select>
-      </label>
-      <label class="roster-side-pref-row">
-        Lower-average midfielder/wing
-        <select id="roster-pref-midfielder">
-          <option value="none">No preference</option>
-          <option value="left">Left side</option>
-          <option value="right">Right side</option>
-        </select>
-      </label>
-      <label class="roster-side-pref-row">
-        Lower-average forward
-        <select id="roster-pref-forward">
-          <option value="none">No preference</option>
-          <option value="left">Left side</option>
-          <option value="right">Right side</option>
-        </select>
-      </label>
-    </section>
-    <div id="roster-list" class="roster-list"></div>
+    <div id="roster-scroll-area">
+      <div id="roster-list" class="roster-list"></div>
+      <details class="roster-collapsible">
+        <summary>Formation</summary>
+        <div class="roster-collapsible-body">
+          <label class="roster-side-pref-row">
+            Formation
+            <select id="roster-formation">
+              <option value="2-3-1">2-3-1</option>
+            </select>
+          </label>
+        </div>
+      </details>
+      <details class="roster-collapsible">
+        <summary>Side preferences</summary>
+        <div class="roster-collapsible-body">
+          <p class="roster-side-preferences-hint">
+            Which side gets the lower-average player (offense/defense averaged) by default. Applies to every new
+            lineup unless a chat request says otherwise for that one game.
+          </p>
+          <label class="roster-side-pref-row">
+            Lower-average defender
+            <select id="roster-pref-defender">
+              <option value="none">No preference</option>
+              <option value="left">Left side</option>
+              <option value="right">Right side</option>
+            </select>
+          </label>
+          <label class="roster-side-pref-row">
+            Lower-average midfielder/wing
+            <select id="roster-pref-midfielder">
+              <option value="none">No preference</option>
+              <option value="left">Left side</option>
+              <option value="right">Right side</option>
+            </select>
+          </label>
+          <label class="roster-side-pref-row">
+            Lower-average forward
+            <select id="roster-pref-forward">
+              <option value="none">No preference</option>
+              <option value="left">Left side</option>
+              <option value="right">Right side</option>
+            </select>
+          </label>
+        </div>
+      </details>
+      <details class="roster-collapsible">
+        <summary>Backup</summary>
+        <div class="roster-collapsible-body">
+          <p class="roster-side-preferences-hint">
+            Download a copy of your roster to keep somewhere else too. Restoring replaces every player currently on
+            your roster with what's in the file.
+          </p>
+          <div class="roster-backup-actions">
+            <button type="button" id="roster-backup-download">⬇️ Download backup</button>
+            <button type="button" id="roster-backup-restore-btn">⬆️ Restore from backup</button>
+            <input type="file" id="roster-backup-restore-input" accept="application/json,.json" hidden />
+          </div>
+        </div>
+      </details>
+    </div>
     <form id="roster-add-form">
       <h3>Add a player</h3>
       <label for="roster-add-name">Name</label>
