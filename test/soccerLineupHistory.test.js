@@ -307,6 +307,20 @@ test('soccerLineupHistory.js', async (t) => {
     assert.strictEqual(summaryEntry.name, players[0].name, 'the frozen snapshot preserves the real name even after removal');
   });
 
+  await t.test('a resting player survives the storage round-trip as its own field, distinct from the bench', async () => {
+    const { roster, players } = seedRoster('lhCoachRest');
+    const extra = soccerLineup.addPlayerDirect(roster, { name: 'Fixture Extra', offense: 1, defense: 1, goalie: 1 });
+    soccerLineup.saveRoster('lhCoachRest', roster);
+    const live = soccerLineup.loadRoster('lhCoachRest');
+    const created = await history.withLineupLock('lhCoachRest', () =>
+      history.createGame('lhCoachRest', live, { resting: { 1: [extra.id] } })
+    );
+    const reopened = history.getGame('lhCoachRest', created.gameId, live);
+    const q1 = reopened.drafts[reopened.selectedDraftId].result.quarters[0];
+    assert.deepStrictEqual(q1.bench.map((p) => p.id), [], 'the only surplus player is resting, so bench must be empty, not swallow them');
+    assert.deepStrictEqual(q1.resting.map((p) => p.id), [extra.id]);
+  });
+
   await t.test('an id that truly has no snapshot entry anywhere (corrupted/orphaned reference) falls back to a safe placeholder instead of crashing', async () => {
     const { roster } = seedRoster('lhCoachOrphan');
     const created = await history.withLineupLock('lhCoachOrphan', () => history.createGame('lhCoachOrphan', roster, {}));
