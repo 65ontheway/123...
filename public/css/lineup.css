@@ -135,3 +135,77 @@
   .lineup-actions { flex-direction: column; }
   .lineup-btn { width: 100%; }
 }
+
+/* Printable one-page sheet (public/js/lineup.js's printLineup): a single
+   shared #lineup-print-sheet, off-screen except during an actual print,
+   where it becomes the only visible thing on the page — see the @media
+   print block below. Reuses lineup-field-wrap/-frame (the pitch diagram)
+   unchanged; only its own max-width/aspect-ratio are relaxed here so each
+   quadrant's diagram fills whatever space the print grid gives it instead
+   of staying capped at the on-screen card's compact size. */
+#lineup-print-sheet {
+  display: none;
+}
+.lineup-print-header {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: #000;
+}
+.lineup-print-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 0.25in;
+}
+.lineup-print-quarter {
+  border: 1px solid #999;
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.lineup-print-quarter-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #000;
+}
+.lineup-print-quarter .lineup-field-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.lineup-print-quarter .lineup-field-frame {
+  max-width: 100%;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+.lineup-print-note {
+  font-size: 10.5px;
+  color: #333;
+}
+
+@media print {
+  body > *:not(#lineup-print-sheet) {
+    display: none !important;
+  }
+  #lineup-print-sheet {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    padding: 0.15in;
+    box-sizing: border-box;
+  }
+  #lineup-print-sheet .lineup-print-grid {
+    flex: 1;
+    min-height: 0;
+  }
+  @page {
+    size: landscape;
+    margin: 0.3in;
+  }
+}

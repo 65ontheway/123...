@@ -185,6 +185,77 @@ function statusLabel(status) {
   return status === 'finalized' ? 'Finalized' : 'Draft';
 }
 
+// A single sheet shared by every lineup card on the page, rather than one
+// per card — printing is a page-wide operation (the browser prints
+// whatever's visible), so there only ever needs to be one, populated fresh
+// right before window.print() is called. Lives outside any card, appended
+// straight to <body>; CSS hides it (and everything else) except during an
+// actual print, per the print rules in lineup.css.
+let printSheet = null;
+function getPrintSheet() {
+  if (!printSheet) {
+    printSheet = document.createElement('div');
+    printSheet.id = 'lineup-print-sheet';
+    document.body.appendChild(printSheet);
+  }
+  return printSheet;
+}
+
+// One quarter's printable cell: same pitch diagram as the on-screen card
+// (renderField), plus bench/resting — everything a coach needs sideline,
+// nothing else. Quarter number is the only thing sized up here; the field
+// diagram and text stay exactly as compact as the on-screen version so all
+// four fit one landscape page together.
+function buildPrintQuarter(q) {
+  const cell = document.createElement('div');
+  cell.className = 'lineup-print-quarter';
+
+  const h = document.createElement('div');
+  h.className = 'lineup-print-quarter-title';
+  h.textContent = `Quarter ${q.quarter}`;
+  cell.appendChild(h);
+
+  cell.appendChild(renderField(q.lineup));
+
+  if (q.bench.length > 0) {
+    const bench = document.createElement('div');
+    bench.className = 'lineup-print-note';
+    bench.textContent = `Bench: ${q.bench.map((p) => p.name).join(', ')}`;
+    cell.appendChild(bench);
+  }
+  if (q.resting && q.resting.length > 0) {
+    const resting = document.createElement('div');
+    resting.className = 'lineup-print-note';
+    resting.textContent = `Resting: ${q.resting.map((p) => p.name).join(', ')}`;
+    cell.appendChild(resting);
+  }
+  return cell;
+}
+
+// Quarters 1-4 always print in that fixed reading order — top-left,
+// top-right, bottom-left, bottom-right — matching AYSO's own halves (Q1+Q2
+// is the first half, Q3+Q4 the second), regardless of the CSS grid's own
+// column/row mechanics, so a coach reading the printed page left-to-right,
+// top-to-bottom always reads the game in the order it's actually played.
+function printLineup(game) {
+  const draft = game.drafts[game.selectedDraftId];
+  if (!draft) return;
+  const sheet = getPrintSheet();
+  sheet.innerHTML = '';
+
+  const header = document.createElement('div');
+  header.className = 'lineup-print-header';
+  header.textContent = `${game.date || ''} — ${statusLabel(game.status)}`;
+  sheet.appendChild(header);
+
+  const grid = document.createElement('div');
+  grid.className = 'lineup-print-grid';
+  for (const q of draft.result.quarters) grid.appendChild(buildPrintQuarter(q));
+  sheet.appendChild(grid);
+
+  window.print();
+}
+
 const gameRequests = new Map();
 function fetchGame(gameId) {
   if (gameRequests.has(gameId)) return gameRequests.get(gameId);
@@ -342,6 +413,13 @@ export function renderLineupCard(container, meta, { onUpdate } = {}) {
       runAction('alternative');
     });
     actions.appendChild(altBtn);
+
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'lineup-btn';
+    printBtn.textContent = '🖨️ Print';
+    printBtn.addEventListener('click', () => currentGame && printLineup(currentGame));
+    actions.appendChild(printBtn);
 
     if (currentMeta.status === 'finalized') {
       const undoBtn = document.createElement('button');
