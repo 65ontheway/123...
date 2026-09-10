@@ -217,6 +217,24 @@ test('soccerScheduling.js (computeGameLineup)', async (t) => {
     assert.ok(result.warnings.some((w) => w.includes('4th quarter') && w.includes('honored anyway')));
   });
 
+  await t.test('a resting player is reported separately from the bench, not silently dropped from the quarter entirely', () => {
+    // Regression: a resting player is excluded from `available` before
+    // `bench` is computed (bench = available minus who's actually used),
+    // so without its own field they never appeared in EITHER list for
+    // that quarter — a coach counting names would come up short with no
+    // explanation why, reading as a scheduling bug rather than their own
+    // resting request.
+    const { roster, players } = buildRoster('2-3-1'); // 8 players, 7 slots
+    const resting = players[0];
+    const result = soccerLineup.computeGameLineup(roster, { resting: { 1: [resting.id] } });
+    const q1 = result.quarters[0];
+    assert.strictEqual(q1.lineup.filter((s) => s.player).length, 7, 'all 7 slots still fill from the other 7 players');
+    assert.deepStrictEqual(q1.bench.map((p) => p.id), [], 'the resting player is not the bench (nobody else was left over)');
+    assert.deepStrictEqual(q1.resting.map((p) => p.id), [resting.id]);
+    const text = soccerLineup.formatGameLineupResult(result);
+    assert.ok(text.includes(`Resting: ${resting.name}`), 'the formatted text must call out who is resting, not just omit them');
+  });
+
   await t.test('center positions (center_back, center_mid) are never touched by side-assignment', () => {
     const { roster } = buildRoster('3-2-1');
     const result = soccerLineup.computeGameLineup(roster, { sideOverrides: { defender: 'left' } });

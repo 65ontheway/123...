@@ -92,6 +92,9 @@
   font-size: 12px;
   color: var(--muted);
 }
+.lineup-resting {
+  font-style: italic;
+}
 .lineup-action-status {
   margin: 8px 0 0;
   font-size: 12px;

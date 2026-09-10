@@ -251,6 +251,12 @@ function renderQuarters(el, game) {
       bench.textContent = `Bench: ${q.bench.map((p) => p.name).join(', ')}`;
       qDiv.appendChild(bench);
     }
+    if (q.resting && q.resting.length > 0) {
+      const resting = document.createElement('div');
+      resting.className = 'lineup-bench lineup-resting';
+      resting.textContent = `Resting: ${q.resting.map((p) => p.name).join(', ')}`;
+      qDiv.appendChild(resting);
+    }
     el.appendChild(qDiv);
   }
 
