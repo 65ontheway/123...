@@ -17,7 +17,8 @@
     "express-session": "^1.18.0",
     "mammoth": "^1.12.2",
     "marked": "^18.0.11",
-    "pdfkit": "^0.20.2"
+    "pdfkit": "^0.20.2",
+    "session-file-store": "^1.5.0"
   },
   "overrides": {
     "qs": "6.16.0",

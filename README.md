@@ -37,6 +37,55 @@ npm start
 
 Open http://localhost:3000, log in, and you're redirected to `/chat`.
 
+## Deployment
+
+To reach the app from a phone (or anywhere) even when your own computer is
+off, it needs to run somewhere always-on. A `Dockerfile` is included; any
+host that runs a container with a persistent volume works, but
+[Fly.io](https://fly.io) is a straightforward one since it gives you a free
+HTTPS URL out of the box. Rough steps:
+
+```bash
+# One-time: install flyctl and sign in
+curl -L https://fly.io/install.sh | sh
+fly auth signup   # or `fly auth login` if you already have an account
+
+# From the project root
+fly launch --no-deploy   # detects the Dockerfile, asks for an app name/region
+fly volumes create raygpt_data --size 1   # 1 GiB is plenty; keep the app's region
+
+# Set every secret from .env.example as a real secret (never committed)
+fly secrets set \
+  OPENROUTER_API_KEY=... \
+  OPENROUTER_MODEL=... \
+  APP_USERNAME=... \
+  APP_PASSWORD=... \
+  SESSION_SECRET=$(openssl rand -hex 32) \
+  APP_URL=https://<your-app-name>.fly.dev \
+  RAYGPT_DATA_DIR=/data
+```
+
+Then add a `[mounts]` block to the `fly.toml` `fly launch` generated, mounting
+that volume at the same path as `RAYGPT_DATA_DIR`:
+
+```toml
+[mounts]
+  source = "raygpt_data"
+  destination = "/data"
+```
+
+```bash
+fly deploy
+```
+
+The volume is what makes roster/lineup/session data (and login itself)
+survive a redeploy — without it, `/data` resets to empty on every deploy,
+same as any container's filesystem. `TRUST_PROXY` is worth setting once you
+know the platform's proxy IP/CIDR, so `secure` cookies and IP-based rate
+limiting see the real client rather than the proxy; harmless to leave unset
+otherwise. Once deployed, `https://<your-app-name>.fly.dev` works from any
+device, phone included — no port forwarding or home network exposure needed.
+
 ## Standing facts (`facts.md`)
 
 Standing facts are disabled by default. Set `SEND_STANDING_FACTS=true` to
@@ -552,9 +601,11 @@ Failures report what was saved; combined actions are not a database transaction.
 ### Local hosting and limits
 
 The application still supports one configured account and one server process.
-`NODE_ENV=production` refuses startup until the separate database task provides
-a persistent session store. Express MemoryStore is not production-ready.
-No database or deployment is included in this cleanup.
+Sessions are stored as files under the private data directory's `sessions/`
+folder (via `session-file-store`), not Express's in-memory `MemoryStore` —
+a restart or redeploy no longer signs everyone out. `NODE_ENV=production` no
+longer refuses startup. No database is included; roster/lineup/session data
+is still plain files on disk.
 
 Login renews the session ID. Password changes invalidate all existing sessions
 and require sign-in again. Cookies are HTTP-only, SameSite=Lax and secure on
