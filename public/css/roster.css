@@ -88,17 +88,43 @@
 .roster-status.roster-status-error { color: var(--error); }
 .roster-status.roster-status-ok { color: var(--accent); }
 
-.roster-side-preferences {
-  padding: 12px 18px;
+/* Formation / Side preferences / Backup: collapsed by default (native
+   <details>, no JS needed) specifically so the player list — the thing a
+   coach actually opens this panel to see — gets the panel's space by
+   default, rather than three settings sections eating it first. See
+   #roster-scroll-area below for how the list, these, and the panel's
+   available height all relate. */
+.roster-collapsible {
   border-bottom: 1px solid var(--border);
+}
+.roster-collapsible summary {
+  padding: 12px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+}
+.roster-collapsible summary::-webkit-details-marker { display: none; }
+.roster-collapsible summary::after {
+  content: '▸';
+  color: var(--muted);
+  font-weight: 400;
+  transition: transform 0.15s ease;
+}
+.roster-collapsible[open] summary::after { transform: rotate(90deg); }
+.roster-collapsible summary:hover { background: var(--bubble-assistant); }
+.roster-collapsible summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.roster-collapsible-body {
+  padding: 0 18px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.roster-side-preferences h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
 }
 .roster-side-preferences-hint {
   margin: 0;
@@ -128,17 +154,23 @@
   outline-offset: 2px;
 }
 
-.roster-list {
+/* The scrollable middle of the panel — list, then the three collapsed
+   settings sections — as ONE region, so it's a single ordinary scroll
+   (like any settings page) rather than the list fighting three fixed
+   siblings for a sliver of space. flex:1 + min-height:0 is what lets it
+   actually shrink to the space left after the header/status text and the
+   pinned "Add a player" footer below, instead of forcing the whole
+   fixed-height panel taller than the viewport (a flex item's default
+   min-height is "auto" — never shrinking below its own content — without
+   this override). */
+#roster-scroll-area {
   flex: 1;
-  /* Without this, a flex item's default min-height is "auto" — meaning it
-     never shrinks below its own content's height, so a long player list
-     (plus the Backup/Formation/Side-preferences sections above it) pushes
-     the whole fixed-height panel taller than the viewport instead of just
-     this list scrolling internally. Everything below it (the "Add a
-     player" form) then gets clipped off the bottom edge with no way to
-     reach it, since nothing else in the panel scrolls. */
   min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.roster-list {
   padding: 10px 18px;
   display: flex;
   flex-direction: column;
@@ -267,9 +299,15 @@
 }
 
 #roster-add-form {
+  /* A pinned footer, not part of #roster-scroll-area — it's the panel's
+     one primary action, so it should never scroll out of reach the way
+     the settings sections above it can. flex-shrink:0 is what keeps it at
+     its natural height regardless of how little space #roster-scroll-area
+     (the only flex:1 sibling) ends up with. */
   flex-shrink: 0;
   padding: 14px 18px;
   border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   gap: 6px;
