@@ -81,9 +81,20 @@ test('security and failure boundaries with isolated fictional fixtures', async t
     const tools = [soccer.SET_GAME_LINEUP_TOOL];
     assert.equal(validateToolCalls([call('unknown', {})], tools), false);
     assert.equal(validateToolCalls([call('set_game_lineup', { date: '2025-02-30' })], tools), false);
-    assert.equal(validateToolCalls([call('set_game_lineup', { resting: { 5: [] } })], tools), false);
+    assert.equal(validateToolCalls([call('set_game_lineup', { resting: { 1: 'not-an-array' } })], tools), false);
     assert.equal(validateToolCalls([call('set_game_lineup', {})], tools), true);
     assert.equal(validateToolCalls([call('set_game_lineup', {}), { ...call('set_game_lineup', {}), id: 'two' }], tools), false);
+  });
+  await t.test('a bad quarter key or unrecognized pinned position is deferred to downstream per-entry handling, not rejected outright', () => {
+    // Rejecting the whole call here would throw away every other
+    // correctly-specified pin/resting entry over one bad one (see
+    // toolValidation.js) -- soccerPrivacy.js's translateSchedulingArgsToIds
+    // and soccerScheduling.js's own pin-processing already drop just the
+    // one bad entry, with a specific warning, instead.
+    const call = (name, args) => ({ id: 'one', function: { name, arguments: JSON.stringify(args) } });
+    const tools = [soccer.SET_GAME_LINEUP_TOOL];
+    assert.equal(validateToolCalls([call('set_game_lineup', { resting: { 5: [] } })], tools), true);
+    assert.equal(validateToolCalls([call('set_game_lineup', { pinned: { 1: { 'Coach Fixture': 'bench' } } })], tools), true);
   });
   await t.test('validateToolCallsDetailed reports which specific call in a batch failed and why, without invalidating the rest', () => {
     const call = (id, name, args) => ({ id, function: { name, arguments: JSON.stringify(args) } });
