@@ -532,6 +532,19 @@ crash or a failed write mid-save can never leave a half-written or
 corrupted file — the previous save stays intact until a new one fully
 succeeds.
 
+This is still a single copy of the data, on one server's disk — no
+database, no automatic off-server backup. The roster panel's Backup section
+(⬇️ Download backup / ⬆️ Restore from backup) exists specifically to hedge
+against that: download gets the current roster as a JSON file (worth saving
+somewhere else — your own device, a cloud drive); restore uploads one back,
+wholesale-replacing whatever's currently saved (never merges — a player
+present now but missing from the file is gone after restoring). Every
+player gets a fresh id on restore; nothing about a restored roster is
+assumed trustworthy from the file itself beyond its shape (name + 1–5
+offense/defense/goalie ratings), which is validated the same as any other
+roster write. Side preferences aren't part of a restore — only formation
+and players — so reapply those in the panel afterward if you'd set any.
+
 Saved lineups (drafts and finalized games — see "Drafts, alternatives, and
 finalizing a lineup" above) live right alongside rosters, in a sibling
 `lineups/` folder under the same private data directory, one JSON file per

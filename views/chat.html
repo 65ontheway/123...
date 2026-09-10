@@ -101,6 +101,18 @@
     </div>
     <p id="roster-storage-note" class="roster-storage-note"></p>
     <p id="roster-status" class="roster-status" hidden></p>
+    <section id="roster-backup-section" class="roster-side-preferences">
+      <h3>Backup</h3>
+      <p class="roster-side-preferences-hint">
+        Download a copy of your roster to keep somewhere else too. Restoring replaces every player currently on
+        your roster with what's in the file.
+      </p>
+      <div class="roster-backup-actions">
+        <button type="button" id="roster-backup-download">⬇️ Download backup</button>
+        <button type="button" id="roster-backup-restore-btn">⬆️ Restore from backup</button>
+        <input type="file" id="roster-backup-restore-input" accept="application/json,.json" hidden />
+      </div>
+    </section>
     <section id="roster-formation-section" class="roster-side-preferences">
       <h3>Formation</h3>
       <label class="roster-side-pref-row">

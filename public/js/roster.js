@@ -25,6 +25,9 @@ const prefSelects = {
   forward: document.getElementById('roster-pref-forward'),
 };
 const formationSelect = document.getElementById('roster-formation');
+const backupDownloadBtn = document.getElementById('roster-backup-download');
+const backupRestoreBtn = document.getElementById('roster-backup-restore-btn');
+const backupRestoreInput = document.getElementById('roster-backup-restore-input');
 
 const SOCCER_AGENT_ID = 'soccer-lineup';
 let currentRoster = null;
@@ -378,6 +381,87 @@ addForm.addEventListener('submit', async (e) => {
   } catch {
     showStatus('Could not reach the server.', 'error');
   } finally { adding = false; submit.disabled = false; }
+});
+
+// Straight to a browser download, no chat/export-store involvement — a
+// backup has to work even when the AI provider or that whole feature is
+// unavailable, since it exists specifically as a hedge against server-side
+// data loss (see /api/soccer/roster/export). The object URL is revoked
+// right after the click fires; the download itself doesn't need it to
+// stay alive any longer than that.
+backupDownloadBtn.addEventListener('click', async () => {
+  showStatus('Preparing download…', null);
+  try {
+    const res = await apiFetch('/api/soccer/roster/export');
+    if (res.status === 401) {
+      window.location.href = '/';
+      return;
+    }
+    if (!res.ok) {
+      showStatus('Could not download the roster.', 'error');
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `roster-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus('Downloaded.', 'ok');
+  } catch {
+    showStatus('Could not reach the server.', 'error');
+  }
+});
+
+backupRestoreBtn.addEventListener('click', () => backupRestoreInput.click());
+
+backupRestoreInput.addEventListener('change', async () => {
+  const file = backupRestoreInput.files?.[0];
+  backupRestoreInput.value = ''; // lets picking the same file twice in a row still fire 'change'
+  if (!file) return;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    showStatus('That file is not valid JSON.', 'error');
+    return;
+  }
+  const playerCount = Array.isArray(parsed?.players) ? parsed.players.length : 0;
+  if (
+    !window.confirm(
+      `Replace your current roster with this backup (${playerCount} player${playerCount === 1 ? '' : 's'})? ` +
+        'This cannot be undone. Side preferences are not restored — reapply them below if needed.'
+    )
+  ) {
+    return;
+  }
+
+  showStatus('Restoring…', null);
+  try {
+    const res = await apiFetch('/api/soccer/roster/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formation: parsed?.formation, players: parsed?.players }),
+    });
+    if (res.status === 401) {
+      window.location.href = '/';
+      return;
+    }
+    const data = await res.json();
+    if (!data.ok) {
+      showStatus(data.error || 'Could not restore that backup.', 'error');
+      return;
+    }
+    currentRoster = data.roster;
+    editingPlayerId = null;
+    showStatus('Restored.', 'ok');
+    renderList();
+    renderFormation();
+  } catch {
+    showStatus('Could not reach the server.', 'error');
+  }
 });
 
 updateTriggerVisibility();
