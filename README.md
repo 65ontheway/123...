@@ -581,11 +581,11 @@ Logout/account changes invalidate other open tabs; stale-account requests fail.
 
 AI requests allow one active request per account and four per process, with a
 90-second total deadline and at most three provider calls including retries.
-Short/Medium/Long cap each call at 500/1000/4000 output tokens. Persistent
-24-hour limits are 100 requests (including titles), 300,000 reserved output
-tokens, and 16 MiB of submitted input. Chat reserves up to three calls before
-starting; unused reservations are not refunded. Failures do not bypass these
-limits, and unreadable budget records block new requests.
+Short/Medium/Long cap each call at 500/1000/4000 output tokens. There is no
+separate daily/24-hour request or spend cap — for a single-user setup, the
+OpenRouter key's own funded balance is the real ceiling; OpenRouter's own
+dashboard also lets a key carry its own spending limit, if you want a hard
+stop before a balance is exhausted.
 [Provider price ceilings](https://openrouter.ai/docs/guides/routing/provider-selection)
 are $5 per million prompt tokens and $20 per million completion tokens.
 An unavailable model at those prices fails rather than silently using a more
