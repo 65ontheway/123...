@@ -278,6 +278,45 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     assert.deepStrictEqual(reopened.frozenInputs.constraints.pinned, {}, 'the game\'s frozen constraints must remain untouched by a one-off override');
   });
 
+  await t.test('set_game_lineup with one unrecognized pinned position (e.g. "bench") still applies every other pin, instead of rejecting the whole request', async () => {
+    // Regression: a coach mixing "X plays Y in quarter Z" pins with "Z
+    // should be on the bench in quarter W" phrasing can lead the model to
+    // put "bench" in `pinned` instead of `resting`. That must not wipe out
+    // every other correctly-specified pin with a generic
+    // "could not be completed" rejection — soccerScheduling.js already
+    // drops just the one bad entry, with its own specific warning.
+    const { roster, nova, orion } = seedRoster('chatCoachBadPin');
+    const ctx = soccerPrivacy.buildAnonymizationContext(roster);
+    const novaLabel = ctx.labelByPlayerId.get(nova.id);
+    const orionLabel = ctx.labelByPlayerId.get(orion.id);
+
+    nextResponse = {
+      toolCall: {
+        name: 'set_game_lineup',
+        args: { pinned: { 1: { [novaLabel]: 'goalkeeper' }, 3: { [orionLabel]: 'bench' } } },
+      },
+    };
+    const res = makeMockRes();
+    await handleSoccerLineupChat(res, {
+      upstreamMessages: [{ role: 'user', content: 'Fixture Nova plays goalkeeper in Q1. Fixture Orion should be on the bench in Q3.' }],
+      selectedModel: 'test/model',
+      maxTokens: 1000,
+      apiKey: 'test-key',
+      username: 'chatCoachBadPin',
+      appUrl: 'http://localhost',
+      session: {},
+    });
+    assertNoLeaks('set_game_lineup with an unrecognized pinned position');
+    assert.ok(!res.fullText.includes('could not be completed'), 'the request must not be rejected outright over one bad pin');
+    const lineup = res.lineupDelta;
+    assert.ok(lineup && lineup.gameId, 'the game must still have been created');
+
+    const game = history.getGame('chatCoachBadPin', lineup.gameId);
+    const draft = game.drafts[game.selectedDraftId];
+    const q1Goalkeeper = draft.result.quarters[0].lineup.find((s) => s.role === 'goalkeeper');
+    assert.strictEqual(q1Goalkeeper.player?.id, nova.id, 'the valid Q1 goalkeeper pin must still have been honored');
+  });
+
   await t.test('an empty first tool-decision response is retried once and succeeds if the retry produces a reply', async () => {
     seedRoster('chatCoachRetry');
     capturedRequests = [];
@@ -457,12 +496,12 @@ test('Soccer Lineup chat: draft/alternative/finalize tools', async (t) => {
     nextResponse = {
       toolCalls: [
         { name: 'finalize_lineup', args: { gameId: created.gameId } },
-        { name: 'set_game_lineup', args: { resting: { 5: [] } } },
+        { name: 'set_game_lineup', args: { date: '2025-02-30' } },
       ],
     };
     const res = makeMockRes();
     await handleSoccerLineupChat(res, {
-      upstreamMessages: [{ role: 'user', content: 'Use this lineup, and also set one up resting someone in quarter 5.' }],
+      upstreamMessages: [{ role: 'user', content: 'Use this lineup, and also set one up for an invalid date.' }],
       selectedModel: 'test/model',
       maxTokens: 1000,
       apiKey: 'test-key',
