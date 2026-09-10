@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
+const FileStore = require('session-file-store')(session);
+const privateData = require('./lib/privateData');
 const soccerLineup = require('./lib/soccerLineup');
 const { pipeUpstreamStream } = require('./lib/sse');
 const { handleSoccerLineupChat } = require('./lib/soccerLineupChat');
@@ -32,8 +34,18 @@ const PORT = process.env.PORT || 3000;
 const smallJson = express.json({ limit: '16kb' });
 const chatJson = express.json({ limit: '3mb' });
 app.use((req, res, next) => (['/api/chat', '/api/export'].includes(req.path) ? chatJson : smallJson)(req, res, next));
+// File-based, not the default in-memory MemoryStore: a session must survive
+// a server restart/redeploy (a coach shouldn't be logged out every time a
+// fix ships) and MemoryStore leaks without bound under sustained traffic.
+// Lives under the same private data directory as roster/lineup data — same
+// persistent volume in a real deployment, same "never in the git repo"
+// guarantee, no separate backup/retention story to set up.
+const sessionsDir = path.join(privateData.resolvePrivateDataDir(), 'sessions');
+privateData.ensurePrivateDir(sessionsDir);
+const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 4; // 4 hours
 app.use(
   session({
+    store: new FileStore({ path: sessionsDir, ttl: SESSION_MAX_AGE_MS / 1000, retries: 0, logFn: () => {} }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -41,7 +53,7 @@ app.use(
       httpOnly: true,
       sameSite: 'lax',
       secure: 'auto',
-      maxAge: 1000 * 60 * 60 * 4, // 4 hours
+      maxAge: SESSION_MAX_AGE_MS,
     },
   })
 );
@@ -459,7 +471,6 @@ app.use((err, req, res, next) => {
 });
 
 async function start() {
-  if (process.env.NODE_ENV === 'production') throw new Error('Production is disabled until a persistent session store is configured in the database task.');
   await auth.initialize();
   const summary = soccerLineup.initRosterStorage();
   if (summary.conflicts.length || summary.errors.length) console.warn('Roster migration needs attention; existing files were preserved.');
