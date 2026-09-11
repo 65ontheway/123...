@@ -90,6 +90,14 @@ function newAttachmentId() {
 // stored thread history, which resends every past attachment on every turn).
 const MAX_IMAGE_DIMENSION = 1280;
 const IMAGE_JPEG_QUALITY = 0.82;
+const MAX_ATTACHMENTS = 4;
+// Non-image files (PDF/Word/Excel) are sent as-is, so their limit applies to
+// the raw file. Images are downscaled first (see downscaleImage above) and
+// only the *output* is checked — checking the raw camera photo here would
+// reject nearly every phone screenshot before it ever got the chance to
+// shrink, which is exactly what was happening before this limit was split.
+const MAX_FILE_BYTES = 1024 * 1024;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 function downscaleImage(file) {
   return new Promise((resolve, reject) => {
@@ -173,15 +181,21 @@ const XLSX_MIMES = [
 ];
 
 async function ingestFile(file) {
-  if (file.size > 1024 * 1024 || stagedAttachments.length >= 4) throw new Error('Attachment limit');
-  if (document.getElementById('agent-select').value === 'soccer-lineup') throw new Error('Soccer attachments are not supported');
+  if (stagedAttachments.length >= MAX_ATTACHMENTS) throw new Error(`You can attach up to ${MAX_ATTACHMENTS} files per message.`);
+  if (document.getElementById('agent-select').value === 'soccer-lineup') {
+    throw new Error(
+      "Attachments aren't supported by the Soccer Lineup agent, to keep private roster data from ever being sent to the AI. " +
+        'Please describe your request in plain text, or use the roster panel (👥) to manage players directly.'
+    );
+  }
   const ext = (file.name || '').toLowerCase().split('.').pop();
 
   if (file.type.startsWith('image/')) {
     // Mirrors the image menu item's own gating: a model that can't see
     // images shouldn't silently receive one via paste either.
-    if (!currentModelSupportsImages()) throw new Error('This model does not support images');
+    if (!currentModelSupportsImages()) throw new Error('The selected model does not support image attachments. Switch models, or remove the image.');
     const dataUrl = await downscaleImage(file);
+    if (dataUrl.length * 0.75 > MAX_IMAGE_BYTES) throw new Error('That image is too large even after compression. Try a smaller photo.');
     stagedAttachments.push({
       id: newAttachmentId(),
       kind: 'image',
@@ -192,6 +206,7 @@ async function ingestFile(file) {
   }
 
   if (file.type === 'application/pdf' || ext === 'pdf') {
+    if (file.size > MAX_FILE_BYTES) throw new Error('That PDF is larger than the 1 MB limit.');
     const dataUrl = await fileToDataUrl(file);
     stagedAttachments.push({
       id: newAttachmentId(),
@@ -200,6 +215,7 @@ async function ingestFile(file) {
       dataUrl,
     });
   } else if (file.type === DOCX_MIME || ext === 'docx') {
+    if (file.size > MAX_FILE_BYTES) throw new Error('That Word document is larger than the 1 MB limit.');
     const text = await extractDocxText(file);
     stagedAttachments.push({
       id: newAttachmentId(),
@@ -208,6 +224,7 @@ async function ingestFile(file) {
       text,
     });
   } else if (XLSX_MIMES.includes(file.type) || ext === 'xlsx' || ext === 'xls') {
+    if (file.size > MAX_FILE_BYTES) throw new Error('That spreadsheet is larger than the 1 MB limit.');
     const text = await extractSpreadsheetText(file);
     stagedAttachments.push({
       id: newAttachmentId(),
@@ -216,15 +233,15 @@ async function ingestFile(file) {
       text,
     });
   }
-  else throw new Error('Unsupported attachment type');
+  else throw new Error(`Unsupported attachment type${ext ? ` (.${ext})` : ''}. Use an image, PDF, .docx, .xlsx, or .xls file.`);
 }
 
 async function ingestFiles(files) {
   for (const file of files) {
     try {
       await ingestFile(file);
-    } catch {
-      window.dispatchEvent(new CustomEvent('attachment-error', { detail: 'An attachment could not be read. Use a supported file within the size limit.' }));
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('attachment-error', { detail: err?.message || 'An attachment could not be read.' }));
     }
   }
   renderAttachmentPreviews();
