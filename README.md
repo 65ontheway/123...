@@ -115,14 +115,19 @@ The composer has a single 📎 attach button that opens a small menu:
   attached. Attached images are downscaled to at most 1280px on the long
   edge and re-encoded as JPEG in the browser before sending, to keep
   requests small.
-- **Upload file** — a PDF, Word (`.docx`), or Excel (`.xlsx`; convert legacy `.xls` first) file.
+- **Upload file** — a PDF, Word (`.docx`), Excel (`.xlsx`; convert legacy
+  `.xls` first), or plain-text/Markdown (`.txt`, `.md`) file.
   Always available, regardless of which model is selected:
   - PDFs are sent through OpenRouter's own universal PDF parser, which works
     with any model (not just ones with native file support).
-  - Word and Excel files have no equivalent API format, so their text is
-    extracted right in the browser (via `mammoth` for `.docx`, `exceljs` for
-    spreadsheets) and sent as plain text instead of the original file. Legacy
-    `.doc` isn't supported — convert it to `.docx` first.
+  - Word, Excel, and text/Markdown files have no equivalent API format, so
+    their text is extracted right in the browser (via `mammoth` for `.docx`,
+    `exceljs` for spreadsheets, read as-is for `.txt`/`.md`) and sent as
+    plain text instead of the original file. Legacy `.doc` isn't supported —
+    convert it to `.docx` first. A file longer than 30,000 characters (e.g. a
+    large README) is split across multiple attachment slots automatically,
+    since a single message part can't exceed that size — see the size limits
+    below.
 
 Both kinds of attachments persist in thread history, so re-opening an old
 chat shows the same thumbnails/file chips as when they were sent.

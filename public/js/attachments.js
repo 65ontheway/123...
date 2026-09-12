@@ -21,7 +21,9 @@ const attachImageItem = document.getElementById('attach-image-item');
 // outgoing message. Each entry is one of:
 //   { id, kind: 'image', name, dataUrl }
 //   { id, kind: 'pdf',   name, dataUrl }
-//   { id, kind: 'doc',   name, text }        (extracted from .docx/.xlsx/.xls)
+//   { id, kind: 'doc',   name, text }        (extracted from .docx/.xlsx/.xls/.md/.txt;
+//                                              a long file becomes several of these,
+//                                              one per chunk, each its own text part)
 let stagedAttachments = [];
 
 export function getStagedAttachments() {
@@ -151,6 +153,22 @@ async function extractDocxText(file) {
   return result.value.trim();
 }
 
+// .md/.txt -> read as-is, no library needed.
+function extractPlainText(file) {
+  return file.text();
+}
+
+// The server rejects any single text part over 32000 characters (see
+// lib/validation.js), so a README-sized file is split across multiple
+// staged 'doc' attachments up front — chat.js turns each into its own text
+// part, and each part stays under that cap on its own.
+const TEXT_PART_CHUNK_CHARS = 30000;
+function chunkText(text, size) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size));
+  return chunks.length ? chunks : [''];
+}
+
 // .xlsx/.xls -> plain text via exceljs: each sheet rendered as a simple
 // comma-separated grid under a heading with its sheet name.
 async function extractSpreadsheetText(file) {
@@ -179,6 +197,7 @@ const XLSX_MIMES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ];
+const TEXT_EXTS = ['md', 'markdown', 'txt'];
 
 async function ingestFile(file) {
   if (stagedAttachments.length >= MAX_ATTACHMENTS) throw new Error(`You can attach up to ${MAX_ATTACHMENTS} files per message.`);
@@ -232,8 +251,24 @@ async function ingestFile(file) {
       name: file.name || 'spreadsheet.xlsx',
       text,
     });
+  } else if (file.type === 'text/markdown' || file.type === 'text/plain' || TEXT_EXTS.includes(ext)) {
+    if (file.size > MAX_FILE_BYTES) throw new Error('That file is larger than the 1 MB limit.');
+    const text = await extractPlainText(file);
+    const chunks = chunkText(text, TEXT_PART_CHUNK_CHARS);
+    if (stagedAttachments.length + chunks.length > MAX_ATTACHMENTS) {
+      throw new Error(`That file is too long to attach — it would need ${chunks.length} attachment slots, but only ${MAX_ATTACHMENTS - stagedAttachments.length} are left. Try a shorter file, or paste an excerpt instead.`);
+    }
+    const baseName = file.name || 'document.txt';
+    chunks.forEach((chunk, i) => {
+      stagedAttachments.push({
+        id: newAttachmentId(),
+        kind: 'doc',
+        name: chunks.length > 1 ? `${baseName} (part ${i + 1}/${chunks.length})` : baseName,
+        text: chunk,
+      });
+    });
   }
-  else throw new Error(`Unsupported attachment type${ext ? ` (.${ext})` : ''}. Use an image, PDF, .docx, .xlsx, or .xls file.`);
+  else throw new Error(`Unsupported attachment type${ext ? ` (.${ext})` : ''}. Use an image, PDF, .docx, .xlsx, .xls, .md, or .txt file.`);
 }
 
 async function ingestFiles(files) {
