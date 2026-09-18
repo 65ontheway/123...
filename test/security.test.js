@@ -160,6 +160,18 @@ test('security and failure boundaries with isolated fictional fixtures', async t
       assert.equal(signal.aborted, true);
     } finally { global.fetch = original; }
   });
+  await t.test('providerFetch does not force or clamp max_tokens — the caller decides', async () => {
+    const { providerFetch } = require('../lib/provider');
+    const original = global.fetch;
+    const bodies = [];
+    global.fetch = async (url, options) => { bodies.push(JSON.parse(options.body)); return new Response('{}'); };
+    try {
+      await providerFetch('https://example.invalid', { body: JSON.stringify({ model: 'fictional' }) });
+      assert.equal('max_tokens' in bodies[0], false, 'omitting max_tokens must not silently add a cap (this is what Long response length relies on)');
+      await providerFetch('https://example.invalid', { body: JSON.stringify({ model: 'fictional', max_tokens: 50000 }) });
+      assert.equal(bodies[1].max_tokens, 50000, 'an explicit max_tokens above the old 4000 ceiling must pass through unclamped');
+    } finally { global.fetch = original; }
+  });
   await t.test('HTTP sessions, CSRF, private caching and policy binding', async () => {
     const { app } = require('../server');
     const server = app.listen(0, '127.0.0.1');
