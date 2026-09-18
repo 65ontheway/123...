@@ -143,9 +143,10 @@ can't see images; a PDF/Word/Excel file works regardless of model).
 Below the chat list, the sidebar has two dropdowns (global settings, not
 tied to any one chat):
 
-- **Response length** — Short (500 tokens), Medium (1000, default), or Long
-  (4000-token maximum). Applies to the next
-  message sent, from any chat.
+- **Response length** — Short (500 tokens) or Medium (1000, default) cap the
+  reply so it stays brief; Long applies no cap at all (the model's own
+  output limit is the only ceiling), so a genuinely long answer isn't cut
+  off mid-way. Applies to the next message sent, from any chat.
 - **Agent** — each conversation has its own fixed agent. Switching agents
   starts a separate conversation when the current one has messages.
   **General Assistant** is the plain chat flow (it can also
@@ -649,8 +650,11 @@ encrypted and is not a boundary against someone controlling the browser profile.
 Logout/account changes invalidate other open tabs; stale-account requests fail.
 
 AI requests allow one active request per account and four per process, with a
-90-second total deadline and at most three provider calls including retries.
-Short/Medium/Long cap each call at 500/1000/4000 output tokens. There is no
+90-second total deadline, at most three provider calls including retries, and
+a 2 MiB cap on total streamed response bytes. Short/Medium cap each call at
+500/1000 output tokens; Long sends no cap at all, so a reply can run as long
+as the model itself allows (bounded in practice by the byte cap and the
+90-second deadline above, not by an arbitrary token number). There is no
 separate daily/24-hour request or spend cap — for a single-user setup, the
 OpenRouter key's own funded balance is the real ceiling; OpenRouter's own
 dashboard also lets a key carry its own spending limit, if you want a hard

@@ -97,8 +97,11 @@ const AVAILABLE_MODELS = [
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'qwen/qwen3.8-27b';
 const VALID_MODEL_IDS = new Set([...AVAILABLE_MODELS.map((m) => m.id), DEFAULT_MODEL]);
 
-// Every response length has an explicit output cap, including Long.
-const RESPONSE_LENGTH_TOKENS = { short: 500, medium: 1000, long: 4000 };
+// Short/Medium are a deliberate request for brevity, so they keep a real
+// cap. Long means "don't cut me off" — null omits max_tokens entirely, so
+// the model's own output limit applies instead of an arbitrary one that
+// can truncate a real answer (or worse, an in-progress tool call) mid-way.
+const RESPONSE_LENGTH_TOKENS = { short: 500, medium: 1000, long: null };
 const DEFAULT_RESPONSE_LENGTH = 'medium';
 
 // General Assistant is the plain passthrough chat flow. Soccer Lineup is a
